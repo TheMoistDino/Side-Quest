@@ -16,6 +16,7 @@ import sys
 import uuid
 import time
 import asyncio
+import inspect
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 
@@ -77,20 +78,28 @@ from adapters import (
     adapt_acp_message_to_constraints,
     adapt_pipeline_to_frontend_response,
     adapt_pipeline_to_acp_response,
+    select_quest_pois,
+    meal_kind_for_quest,
 )
+from tools.browser_tools import google_meal_near
 
-# Apply global CORS wrapper to ASGIServer so browser requests from Next.js (port 3000) succeed
+# Apply global CORS wrapper to ASGIServer so browser requests from Next.js (port 3000) succeed.
+# Newer uagents (e.g. 0.26) already sends Access-Control-Allow-* on every response via uvicorn's
+# default headers. Adding them again makes browsers reject the response ("multiple values '*, *'"),
+# so only add the allow-headers when this uagents version doesn't.
 _original_asgi_send = ASGIServer._asgi_send
+_UAGENTS_SENDS_CORS = "Access-Control-Allow-Origin" in inspect.getsource(ASGIServer)
 
 async def _cors_asgi_send(self, send, status_code=200, headers=None, body=None):
     if headers is None:
         headers = {}
     if "Content-Type" not in headers and "content-type" not in headers and body is not None:
         headers["Content-Type"] = "application/json"
-    headers["Access-Control-Allow-Origin"] = "*"
-    headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, HEAD"
-    headers["Access-Control-Allow-Headers"] = "*"
-    headers["Access-Control-Max-Age"] = "86400"
+    if not _UAGENTS_SENDS_CORS:
+        headers["Access-Control-Allow-Origin"] = "*"
+        headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, HEAD"
+        headers["Access-Control-Allow-Headers"] = "*"
+    headers["Access-Control-Max-Age"] = "86400"  # uagents doesn't set this; safe to add once
     return await _original_asgi_send(self, send, status_code=status_code, headers=headers, body=body)
 
 ASGIServer._asgi_send = _cors_asgi_send
@@ -210,6 +219,10 @@ async def run_multiagent_pipeline(
                 max_admission=constraints.budget_usd,
                 departure_time=getattr(constraints, "departure_time", None),
                 return_cutoff=getattr(constraints, "return_cutoff", None),
+                origin_lat=getattr(constraints, "user_lat", None),
+                origin_lng=getattr(constraints, "user_lng", None),
+                radius_miles=getattr(constraints, "max_distance_miles", None),
+                group_size=getattr(constraints, "group_size", 1),
             )
             await ctx.send(scout_agent.address, scout_query)
 
@@ -328,6 +341,40 @@ async def run_multiagent_pipeline(
 # REST HTTP Endpoints for Custom Web/App Frontend
 # ==============================================================================
 
+async def find_live_meals(
+    constraints: QuestConstraints,
+    candidate: QuestCandidate,
+    all_candidates: List[QuestCandidate],
+    meal_res: Optional[MealResult],
+) -> Dict[int, Optional[QuestCandidate]]:
+    """Per quest, a real nearby restaurant/cafe within the budget left after the first stop.
+    Value None = searched live but nothing real fits nearby (drop the stop). Quest missing from the
+    dict = no live search (e.g. no API key), so it keeps the budget agent's catalog choice."""
+    pois = select_quest_pois(candidate, all_candidates)
+    jobs: Dict[int, Any] = {}
+    no_budget = set()
+    for index, poi in enumerate(pois, start=1):
+        kind = meal_kind_for_quest(index, meal_res)
+        if not kind:
+            continue
+        left = constraints.budget_usd - poi.estimated_admission
+        cap = min(left, 15.0) if kind == "snack" else left
+        if cap >= 5.0:
+            jobs[index] = google_meal_near(poi.lat, poi.lng, kind=kind, max_cost=cap, exclude_names={p.name for p in pois})
+        else:
+            no_budget.add(index)  # budget is spent after the first stop: no meal/snack stop at all
+    picks: Dict[int, Optional[QuestCandidate]] = {i: None for i in no_budget}
+    used = set()
+    for index, (options, searched) in zip(jobs, await asyncio.gather(*jobs.values())):
+        if not searched:
+            continue
+        pick = next((o for o in options if o.name not in used), None)  # don't repeat a spot across quests
+        picks[index] = pick
+        if pick:
+            used.add(pick.name)
+    return picks
+
+
 @agent.on_rest_post("/api/quest", FrontendQuestRequest, FrontendQuestResponse)
 async def handle_rest_quest(ctx: Context, req: FrontendQuestRequest) -> FrontendQuestResponse:
     """
@@ -349,7 +396,10 @@ async def handle_rest_quest(ctx: Context, req: FrontendQuestRequest) -> Frontend
     # 2. Execute multi-agent orchestration
     cand, chosen_transit, all_transits, meal_res, all_cands = await run_multiagent_pipeline(constraints, ctx)
 
-    # 3. Format into exact FrontendQuestResponse model
+    # 3. Live meal stops near each quest's first stop (the budget agent decided whether and what kind)
+    meal_places = await find_live_meals(constraints, cand, all_cands, meal_res)
+
+    # 4. Format into exact FrontendQuestResponse model
     response = adapt_pipeline_to_frontend_response(
         constraints=constraints,
         candidate=cand,
@@ -358,6 +408,7 @@ async def handle_rest_quest(ctx: Context, req: FrontendQuestRequest) -> Frontend
         meal_res=meal_res,
         req=req,
         all_candidates=all_cands,
+        meal_places=meal_places,
     )
 
     ctx.logger.info(f"✨ [REST /api/quest] Successfully generated {len(response.quests)} curated quests for frontend.")

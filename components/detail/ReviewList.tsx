@@ -30,9 +30,14 @@ export function ReviewList({ reviews, stopName }: Props) {
                 <span className="text-muted">
                   {[r.rating !== undefined ? `★ ${r.rating}` : null, r.author].filter(Boolean).join(" · ")}
                 </span>
-                <span className="shrink-0 font-medium text-muted">
-                  {r.sourceName}
-                </span>
+                <a
+                  href={r.sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 font-medium underline underline-offset-2 transition hover:text-muted"
+                >
+                  {r.sourceName} ↗
+                </a>
               </div>
             </li>
           ))}

@@ -11,7 +11,7 @@ Dwell Time Rules:
 import os
 import sys
 import uuid
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from dotenv import load_dotenv
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -26,6 +26,10 @@ from schemas import DiningQuery, ScoutSubResult, QuestCandidate, VerifiedReview
 from tools.browser_tools import (
     REAL_SOURCE_CATALOG,
     ground_and_validate_candidates,
+    google_place_candidates,
+    search_text,
+    within_radius,
+    price_levels_for_budget,
     make_deterministic_maps_url,
 )
 
@@ -51,6 +55,8 @@ async def query_dining_scout(
     cuisine: Optional[str] = None,
     budget_max: float = 50.0,
     session_id: str = "",
+    center: Optional[Tuple[float, float]] = None,
+    radius_miles: Optional[float] = None,
 ) -> List[QuestCandidate]:
     """
     Core discovery engine for DiningScout.
@@ -59,6 +65,24 @@ async def query_dining_scout(
     """
     area_clean = (area or "westwood").lower()
     cuisine_clean = (cuisine or "").lower()
+
+    # 1. Live Google Places (when GOOGLE_MAPS_API_KEY is set); the curated catalog below is the fallback.
+    live = await google_place_candidates(
+        search_text(cuisine or "popular restaurants and cafes", area, center),
+        scout_name="Dining Scout",
+        category_fallback="Restaurant",
+        dwell_for=bound_dining_dwell,
+        unknown_cost=15.0,
+        perk="+20 Live Discovery Bonus",
+        center=center,
+        radius_miles=radius_miles,
+        price_levels=price_levels_for_budget(budget_max),
+    )
+    live = [c for c in live if budget_max <= 0 or c.admission_cost <= budget_max]
+    if live:
+        return await ground_and_validate_candidates(live, area_hint=area)
+
+    # 2. Curated catalog fallback
 
     # Match region key
     catalog = REAL_SOURCE_CATALOG["dining"]
@@ -154,7 +178,7 @@ async def query_dining_scout(
         )
 
     # Anti-404 live HTTP pre-flight check
-    return await ground_and_validate_candidates(candidates, area_hint=area)
+    return await ground_and_validate_candidates(within_radius(candidates, center, radius_miles), area_hint=area)
 
 
 dining_proto = Protocol(name="DiningScoutProtocol", version="1.0.0")

@@ -25,7 +25,7 @@ class QuestConstraints(BaseModel):
     vibe: str = Field(default="adventure", description="Requested vibe or activity type")
     departure_time: Optional[str] = Field(default=None, description="Preferred departure time string")
     return_cutoff: Optional[str] = Field(default=None, description="Hard deadline to return")
-    max_distance_miles: float = Field(default=10.0, description="Max travel radius in miles")
+    max_distance_miles: Optional[float] = Field(default=10.0, description="Max travel radius in miles")
     group_size: int = Field(default=1, description="Party size")
     user_lat: float = Field(default=34.0635, description="Starting latitude")
     user_lng: float = Field(default=-118.4455, description="Starting longitude")

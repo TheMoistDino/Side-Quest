@@ -18,10 +18,11 @@ import os
 import sys
 import re
 import uuid
+import random
 import asyncio
 import urllib.parse
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import httpx
 import requests
 from dotenv import load_dotenv
@@ -38,7 +39,12 @@ from schemas import ScoutQuery, ScoutResult, QuestCandidate, VerifiedReview
 from dining_scout import dining_scout, query_dining_scout
 from trails_scout import trails_scout, query_trails_scout
 from culture_scout import culture_scout, query_culture_scout
-from tools.browser_tools import ground_and_validate_candidates
+from tools.browser_tools import (
+    ground_and_validate_candidates,
+    google_place_candidates,
+    search_text,
+    within_radius,
+)
 
 SCOUT_SEED = os.getenv("SCOUT_SEED_PHRASE", "scout-subagent-seed-phrase-la-hacks-quest").strip()
 
@@ -1348,6 +1354,57 @@ async def verify_and_ground_candidates(
 # 5. Ensemble Coordinator & Category Intent Router
 # ==============================================================================
 
+# Words that mark a real games venue (Google category or name), so a "game bar" search can't hand back
+# a plain restaurant or a hiking trail.
+GAMING_KEYWORDS = [
+    "arcade", "barcade", "bowling", "amusement", "game", "gaming", "pinball", "billiard", "pool hall",
+    "escape room", "laser tag", "karaoke", "mini golf", "miniature golf", "go-kart", "go kart", "vr ", "virtual reality",
+    "family entertainment", "dave & buster", "round1", "button mash", "ax throwing", "axe throwing",
+]
+
+
+def _is_gaming_venue(cand: QuestCandidate) -> bool:
+    text = f"{cand.category} {cand.name}".lower()
+    return any(k in text for k in GAMING_KEYWORDS)
+
+
+async def query_games_scout(
+    area: str,
+    center: Optional[Tuple[float, float]] = None,
+    radius_miles: Optional[float] = None,
+    max_admission: float = 50.0,
+    departure_time: Optional[str] = None,
+    return_cutoff: Optional[str] = None,
+) -> List[QuestCandidate]:
+    """Games scout: live Google arcades, bowling alleys and game bars (only venues that look like games
+    places), falling back to the curated arcade catalog when Google is unavailable or finds none."""
+    live = await google_place_candidates(
+        search_text("arcades, bowling alleys, pinball and game bars", area, center),
+        scout_name="Games Scout",
+        category_fallback="Arcade",
+        dwell_for=lambda _type: 75,
+        unknown_cost=20.0,  # play cards / lanes vary; shown as "~$20 estimate"
+        perk="+25 High Score Bonus",
+        center=center,
+        radius_miles=radius_miles,
+    )
+    games_only = [c for c in live if _is_gaming_venue(c) and (max_admission <= 0 or c.admission_cost <= max_admission)]
+    if live:
+        dropped = len(live) - len(games_only)
+        print(f"INFO:     [Games Scout]: 🕹️ kept {len(games_only)} games venues, dropped {dropped} non-games results", flush=True)
+    if games_only:
+        return await ground_and_validate_candidates(games_only, area_hint=area)
+
+    catalog = query_poi_database(
+        area=area,
+        category="arcade",
+        max_admission=max_admission,
+        departure_time=departure_time,
+        return_cutoff=return_cutoff,
+    )
+    return await ground_and_validate_candidates(within_radius(catalog, center, radius_miles) or catalog[:3], area_hint=area)
+
+
 async def route_ensemble_query(
     area: str,
     category: str,
@@ -1355,6 +1412,8 @@ async def route_ensemble_query(
     departure_time: Optional[str] = None,
     return_cutoff: Optional[str] = None,
     session_id: str = "",
+    center: Optional[Tuple[float, float]] = None,
+    radius_miles: Optional[float] = None,
 ) -> List[QuestCandidate]:
     """
     Ensemble Coordinator:
@@ -1375,36 +1434,38 @@ async def route_ensemble_query(
     wants_culture = any(k in cat_lower for k in ["culture", "museum", "art", "gallery", "historic", "thrift", "vintage", "book"])
 
     if wants_gaming:
-        # User requested games or arcade; route directly to verified gaming catalog
-        return query_poi_database(
+        # Games/arcade: live Google arcades & game venues within the radius, arcade catalog as fallback
+        return await query_games_scout(
             area=area,
-            category="arcade",
+            center=center,
+            radius_miles=radius_miles,
             max_admission=max_admission,
             departure_time=departure_time,
             return_cutoff=return_cutoff,
         )
     elif wants_trails and not wants_dining:
         # User explicitly requested outdoor adventure/trails; query TrailsScout only
-        tasks.append(query_trails_scout(area=area, intensity="moderate", time_window_mins=90, session_id=session_id))
+        tasks.append(query_trails_scout(area=area, center=center, radius_miles=radius_miles, intensity="moderate", time_window_mins=90, session_id=session_id))
     elif wants_culture and not wants_dining:
-        tasks.append(query_culture_scout(area=area, admission_max=max_admission, session_id=session_id))
+        tasks.append(query_culture_scout(area=area, center=center, radius_miles=radius_miles, admission_max=max_admission, session_id=session_id))
     elif wants_dining and not (wants_trails or wants_culture):
-        tasks.append(query_dining_scout(area=area, cuisine=category, budget_max=max_admission, session_id=session_id))
+        tasks.append(query_dining_scout(area=area, center=center, radius_miles=radius_miles, cuisine=category, budget_max=max_admission, session_id=session_id))
     elif cat_lower in ["chill", "relaxation"]:
         # Chill prioritizes scenic parks/trails and culture before dining
-        tasks.append(query_trails_scout(area=area, time_window_mins=90, session_id=session_id))
-        tasks.append(query_culture_scout(area=area, admission_max=max_admission, session_id=session_id))
-        tasks.append(query_dining_scout(area=area, budget_max=max_admission, session_id=session_id))
+        tasks.append(query_trails_scout(area=area, center=center, radius_miles=radius_miles, time_window_mins=90, session_id=session_id))
+        tasks.append(query_culture_scout(area=area, center=center, radius_miles=radius_miles, admission_max=max_admission, session_id=session_id))
+        tasks.append(query_dining_scout(area=area, center=center, radius_miles=radius_miles, budget_max=max_admission, session_id=session_id))
     else:
         # Mixed or general exploration: balanced ensemble with trails and culture first
-        tasks.append(query_trails_scout(area=area, time_window_mins=90, session_id=session_id))
-        tasks.append(query_culture_scout(area=area, admission_max=max_admission, session_id=session_id))
-        tasks.append(query_dining_scout(area=area, budget_max=max_admission, session_id=session_id))
+        tasks.append(query_trails_scout(area=area, center=center, radius_miles=radius_miles, time_window_mins=90, session_id=session_id))
+        tasks.append(query_culture_scout(area=area, center=center, radius_miles=radius_miles, admission_max=max_admission, session_id=session_id))
+        tasks.append(query_dining_scout(area=area, center=center, radius_miles=radius_miles, budget_max=max_admission, session_id=session_id))
 
     results = await asyncio.gather(*tasks)
     aggregated: List[QuestCandidate] = []
     for sub_list in results:
         aggregated.extend(sub_list)
+    random.shuffle(aggregated)  # mix scouts' picks so quest order varies between identical searches
 
     if not aggregated:
         # Resilient fallback to local catalog
@@ -1441,6 +1502,8 @@ async def handle_scout_query(ctx: Context, sender: str, msg: ScoutQuery):
         departure_time=msg.departure_time,
         return_cutoff=msg.return_cutoff,
         session_id=msg.session_id,
+        center=(msg.origin_lat, msg.origin_lng) if msg.origin_lat is not None and msg.origin_lng is not None else None,
+        radius_miles=msg.radius_miles,
     )
 
     ctx.logger.info(

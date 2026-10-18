@@ -1,5 +1,6 @@
 import type { Stop } from "@/types/quest";
-import { formatDuration, formatMoney, formatRating, formatTime } from "@/lib/format";
+import { formatCount, formatDuration, formatMoney, formatRating, formatTime } from "@/lib/format";
+import { ReviewList } from "./ReviewList";
 
 type Props = {
   stop: Stop;
@@ -54,31 +55,27 @@ export function StopCard({ stop, runningCost, runningIsEstimate, isLast }: Props
               <path d="M12 2l3 7 7 .6-5.3 4.7 1.6 7.2L12 17.8 5.7 21.5l1.6-7.2L2 9.6 9 9z" />
             </svg>
             <span className="font-semibold">{formatRating(stop.rating)}</span>
+            {stop.reviewCount !== undefined && (
+              <span className="text-muted">({formatCount(stop.reviewCount)} reviews)</span>
+            )}
           </div>
         )}
 
-        {stop.reviewSummary && (
-          <div className="flex flex-col gap-1 rounded-xl bg-surface/60 p-3 border border-line/60">
-            <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted">
-              <span className="size-1.5 rounded-full bg-sign" aria-hidden />
-              AI Review Summary
-            </span>
-            <p className="text-sm leading-[21px]">{stop.reviewSummary}</p>
-          </div>
-        )}
+        <p className="text-sm leading-[21px]">{stop.reviewSummary}</p>
 
-        {stop.sourceUrl && (
-          <div>
+        <div className="flex flex-wrap items-start gap-x-5 gap-y-2">
+          <ReviewList reviews={stop.reviews} stopName={stop.name} />
+          {stop.sourceUrl && (
             <a
               href={stop.sourceUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex text-[13px] font-medium text-muted underline underline-offset-2 transition hover:text-text"
+              className="text-[13px] font-medium text-muted underline underline-offset-2 transition hover:text-text"
             >
               Details ↗
             </a>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </li>
   );

@@ -13,7 +13,7 @@ Features:
 import os
 import sys
 import uuid
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from dotenv import load_dotenv
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -28,6 +28,9 @@ from schemas import TrailsQuery, ScoutSubResult, QuestCandidate, VerifiedReview
 from tools.browser_tools import (
     REAL_SOURCE_CATALOG,
     ground_and_validate_candidates,
+    google_place_candidates,
+    search_text,
+    within_radius,
     make_deterministic_maps_url,
 )
 
@@ -50,6 +53,8 @@ async def query_trails_scout(
     intensity: str = "moderate",
     time_window_mins: int = 90,
     session_id: str = "",
+    center: Optional[Tuple[float, float]] = None,
+    radius_miles: Optional[float] = None,
 ) -> List[QuestCandidate]:
     """
     Core discovery engine for TrailsScout.
@@ -57,6 +62,22 @@ async def query_trails_scout(
     computes distance-based dwell time, and checks live URL health.
     """
     area_clean = (area or "santa monica").lower()
+
+    # 1. Live Google Places (when GOOGLE_MAPS_API_KEY is set); the curated catalog below is the fallback.
+    live = await google_place_candidates(
+        search_text("hiking trails and parks", area, center),
+        scout_name="Trails Scout",
+        category_fallback="Park",
+        dwell_for=lambda _type: 60,
+        unknown_cost=0.0,  # parks and trailheads are free to enter
+        perk="+20 Live Discovery Bonus",
+        center=center,
+        radius_miles=radius_miles,
+    )
+    if live:
+        return await ground_and_validate_candidates(live, area_hint=area)
+
+    # 2. Curated catalog fallback
 
     catalog = REAL_SOURCE_CATALOG["trails"]
     if "santa monica" in area_clean or "palisades" in area_clean or "venice" in area_clean:
@@ -148,7 +169,7 @@ async def query_trails_scout(
         )
 
     # Anti-404 live HTTP pre-flight check
-    return await ground_and_validate_candidates(candidates, area_hint=area)
+    return await ground_and_validate_candidates(within_radius(candidates, center, radius_miles), area_hint=area)
 
 
 trails_proto = Protocol(name="TrailsScoutProtocol", version="1.0.0")
