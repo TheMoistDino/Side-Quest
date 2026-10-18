@@ -21,7 +21,7 @@ import uuid
 import asyncio
 import urllib.parse
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import httpx
 import requests
 from dotenv import load_dotenv
@@ -1100,6 +1100,8 @@ async def route_ensemble_query(
     departure_time: Optional[str] = None,
     return_cutoff: Optional[str] = None,
     session_id: str = "",
+    center: Optional[Tuple[float, float]] = None,
+    radius_miles: Optional[float] = None,
 ) -> List[QuestCandidate]:
     """
     Ensemble Coordinator:
@@ -1120,16 +1122,16 @@ async def route_ensemble_query(
 
     # If category is mixed, general ("chill", "adventure"), or matched multiple intents
     if not (wants_dining or wants_trails or wants_culture) or cat_lower in ["mixed", "chill", "all", ""]:
-        tasks.append(query_dining_scout(area=area, budget_max=max_admission, session_id=session_id))
-        tasks.append(query_trails_scout(area=area, time_window_mins=90, session_id=session_id))
-        tasks.append(query_culture_scout(area=area, admission_max=max_admission, session_id=session_id))
+        tasks.append(query_dining_scout(area=area, center=center, radius_miles=radius_miles, budget_max=max_admission, session_id=session_id))
+        tasks.append(query_trails_scout(area=area, center=center, radius_miles=radius_miles, time_window_mins=90, session_id=session_id))
+        tasks.append(query_culture_scout(area=area, center=center, radius_miles=radius_miles, admission_max=max_admission, session_id=session_id))
     else:
         if wants_dining:
-            tasks.append(query_dining_scout(area=area, cuisine=category, budget_max=max_admission, session_id=session_id))
+            tasks.append(query_dining_scout(area=area, center=center, radius_miles=radius_miles, cuisine=category, budget_max=max_admission, session_id=session_id))
         if wants_trails:
-            tasks.append(query_trails_scout(area=area, intensity="moderate", time_window_mins=90, session_id=session_id))
+            tasks.append(query_trails_scout(area=area, center=center, radius_miles=radius_miles, intensity="moderate", time_window_mins=90, session_id=session_id))
         if wants_culture:
-            tasks.append(query_culture_scout(area=area, admission_max=max_admission, session_id=session_id))
+            tasks.append(query_culture_scout(area=area, center=center, radius_miles=radius_miles, admission_max=max_admission, session_id=session_id))
 
     results = await asyncio.gather(*tasks)
     aggregated: List[QuestCandidate] = []
@@ -1171,6 +1173,8 @@ async def handle_scout_query(ctx: Context, sender: str, msg: ScoutQuery):
         departure_time=msg.departure_time,
         return_cutoff=msg.return_cutoff,
         session_id=msg.session_id,
+        center=(msg.origin_lat, msg.origin_lng) if msg.origin_lat is not None and msg.origin_lng is not None else None,
+        radius_miles=msg.radius_miles,
     )
 
     ctx.logger.info(

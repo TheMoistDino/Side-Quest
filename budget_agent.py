@@ -12,6 +12,7 @@ Subagent in Quest Orchestrator Bureau:
 
 import os
 import sys
+import random
 from typing import List, Dict, Any
 from dotenv import load_dotenv
 
@@ -112,7 +113,7 @@ async def handle_meal_query(ctx: Context, sender: str, msg: MealQuery):
         if not candidates:
             candidates = SIT_DOWN_OPTIONS[:1]
 
-        chosen = candidates[0]
+        chosen = random.choice(candidates)  # rotate among affordable picks instead of always the first
         reply = MealResult(
             session_id=msg.session_id,
             recommended=True,
@@ -122,7 +123,7 @@ async def handle_meal_query(ctx: Context, sender: str, msg: MealQuery):
             reasoning=f"Optimal slack ({slack}m) and reserve funds (${budget:.2f}) allow a complete sit-down culinary checkpoint: {chosen['reasoning']}",
             perk=chosen["perk"],
         )
-        ctx.logger.info(f"✅ Recommended sit-down meal: {chosen['name']} (${chosen['cost']})")
+        ctx.logger.info(f"✅ Sit-down meal fits (catalog suggestion: {chosen['name']}, ${chosen['cost']}; live pick near each stop replaces it when Google is available)")
 
     # Condition 2: Slack between 20-44m and Budget >= $4.50 -> Grab-and-go / coffee / snack
     elif slack >= 20 and budget >= 4.50:
@@ -130,7 +131,7 @@ async def handle_meal_query(ctx: Context, sender: str, msg: MealQuery):
         if not candidates:
             candidates = SNACK_OPTIONS[:1]
 
-        chosen = candidates[0]
+        chosen = random.choice(candidates)  # rotate among affordable picks instead of always the first
         reply = MealResult(
             session_id=msg.session_id,
             recommended=True,

@@ -21,6 +21,7 @@ from schemas import (
     TransitOption,
     MealResult,
 )
+from transit_agent import calculate_multi_modal_options
 from planner import (
     QuestConstraints,
     extract_constraints,
@@ -207,7 +208,9 @@ def adapt_frontend_request_to_constraints(req: FrontendQuestRequest) -> QuestCon
     cat_raw = (req.category or "").strip().lower()
     if cat_raw in ["arts", "art", "museum", "culture"]:
         vibe = "art"
-    elif cat_raw in ["outdoors", "chill", "nature", "park", "garden"]:
+    elif cat_raw in ["outdoors", "nature", "park", "garden"]:
+        vibe = "outdoors"  # routes to the Trails scout only
+    elif cat_raw == "chill":
         vibe = "chill"
     elif cat_raw in ["food", "dining", "eats", "foodie"]:
         vibe = "food"
@@ -235,6 +238,9 @@ def adapt_frontend_request_to_constraints(req: FrontendQuestRequest) -> QuestCon
         vibe=vibe,
         departure_time=departure_str,
         return_cutoff=return_cutoff_str,
+        origin_lat=lat,
+        origin_lng=lng,
+        max_distance_miles=float(req.maxDistanceMiles) if req.maxDistanceMiles and req.maxDistanceMiles > 0 else None,
     )
 
 
@@ -266,6 +272,33 @@ def normalize_travel_mode(mode: str) -> Literal["driving", "walking", "transit"]
         return "driving"
 
 
+def select_quest_pois(candidate: QuestCandidate, all_candidates: Optional[List[QuestCandidate]]) -> List[QuestCandidate]:
+    """The first stop of quests 1-3: the chosen candidate, then the next distinct ones."""
+    pool = list(all_candidates) if all_candidates else [candidate]
+    if candidate not in pool:
+        pool.insert(0, candidate)
+    return [pool[i] if len(pool) > i else pool[0] for i in range(3)]
+
+
+def meal_kind_for_quest(quest_index: int, meal_res: Optional[MealResult]) -> Optional[str]:
+    """Mirrors the meal rules below: quest 2 always gets a snack; quests 1 and 3 follow the budget agent."""
+    if quest_index == 2:
+        return "snack"
+    if meal_res and meal_res.recommended and meal_res.spot_name:
+        return "meal" if meal_res.dwell_mins >= 35 else "snack"
+    return None
+
+
+def _leg_for_poi(constraints: QuestConstraints, poi: QuestCandidate, preferred_modes: List[str]) -> TransitOption:
+    """Travel estimate from the start to this POI, in the first preferred mode that applies."""
+    options, recommended = calculate_multi_modal_options(constraints.origin, poi.lat, poi.lng)
+    for mode in preferred_modes + [recommended]:
+        match = next((o for o in options if o.mode == mode), None)
+        if match:
+            return match
+    return options[0]
+
+
 def adapt_pipeline_to_frontend_response(
     constraints: QuestConstraints,
     candidate: QuestCandidate,
@@ -274,6 +307,7 @@ def adapt_pipeline_to_frontend_response(
     meal_res: Optional[MealResult],
     req: FrontendQuestRequest,
     all_candidates: Optional[List[QuestCandidate]] = None,
+    meal_places: Optional[Dict[int, Optional[QuestCandidate]]] = None,
 ) -> FrontendQuestResponse:
     """
     Transforms multi-agent synthesized itinerary into the exact schema, field names,
@@ -284,10 +318,8 @@ def adapt_pipeline_to_frontend_response(
     user_lng = req.location.lng
     req_start_iso = req.startTime
 
-    # Ensure we have candidates list
-    candidates_pool = list(all_candidates) if all_candidates else [candidate]
-    if candidate not in candidates_pool:
-        candidates_pool.insert(0, candidate)
+    cand1, cand2, cand3 = select_quest_pois(candidate, all_candidates)
+    meal_places = meal_places or {}
 
     quests: List[FrontendQuest] = []
 
@@ -302,12 +334,17 @@ def adapt_pipeline_to_frontend_response(
         user_lat=user_lat,
         user_lng=user_lng,
         req_start_iso=req_start_iso,
+        meal_place=meal_places.get(1),
+        drop_meal=1 in meal_places and meal_places[1] is None,
     )
     quests.append(primary_quest)
 
     # Helper: Build Quest 2 (Alternative POI or Alternative Mobility Option)
-    cand2 = candidates_pool[1] if len(candidates_pool) > 1 else candidates_pool[0]
-    alt_mode = next((opt for opt in all_transit_options if opt.mode != chosen_transit.mode), chosen_transit)
+    # Quests 2/3 start somewhere else, so estimate their own first leg instead of reusing quest 1's.
+    alt_modes = [opt.mode for opt in all_transit_options if opt.mode != chosen_transit.mode]
+    alt_mode = _leg_for_poi(constraints, cand2, alt_modes) if cand2 is not cand1 else next(
+        (opt for opt in all_transit_options if opt.mode != chosen_transit.mode), chosen_transit
+    )
     quest2 = _build_single_quest(
         quest_index=2,
         title_prefix="Active Pace & Exploratory",
@@ -319,12 +356,15 @@ def adapt_pipeline_to_frontend_response(
         user_lng=user_lng,
         req_start_iso=req_start_iso,
         force_snack=True,
+        meal_place=meal_places.get(2),
+        drop_meal=2 in meal_places and meal_places[2] is None,
     )
     quests.append(quest2)
 
     # Helper: Build Quest 3 (Scenic Leisure & Value Option)
-    cand3 = candidates_pool[2] if len(candidates_pool) > 2 else candidates_pool[0]
-    walk_or_drive = next((opt for opt in all_transit_options if opt.mode in ["walking", "driving"]), chosen_transit)
+    walk_or_drive = _leg_for_poi(constraints, cand3, ["walking", "driving"]) if cand3 is not cand1 else next(
+        (opt for opt in all_transit_options if opt.mode in ["walking", "driving"]), chosen_transit
+    )
     quest3 = _build_single_quest(
         quest_index=3,
         title_prefix="Scenic Leisure & Highlights",
@@ -335,10 +375,37 @@ def adapt_pipeline_to_frontend_response(
         user_lat=user_lat,
         user_lng=user_lng,
         req_start_iso=req_start_iso,
+        meal_place=meal_places.get(3),
+        drop_meal=3 in meal_places and meal_places[3] is None,
     )
     quests.append(quest3)
 
     return FrontendQuestResponse(quests=quests)
+
+
+def _frontend_reviews(poi: QuestCandidate) -> List[FrontendReview]:
+    """Up to 3 real reviews with their own source links (never invented)."""
+    out: List[FrontendReview] = []
+    for r in (poi.reviews or [])[:3]:
+        if isinstance(r, dict):
+            snippet = r.get("text") or r.get("excerpt") or r.get("snippet") or ""
+            out_r = (r.get("author"), r.get("rating"), snippet, r.get("source") or r.get("sourceName") or "Google", r.get("sourceUrl") or r.get("source_url"))
+        else:
+            snippet = getattr(r, "text", "") or getattr(r, "excerpt", "")
+            out_r = (getattr(r, "author", None), getattr(r, "rating", None), snippet, getattr(r, "source", "") or "Google", getattr(r, "source_url", ""))
+        author, rating, snippet, source, url = out_r
+        if not snippet:
+            continue
+        out.append(
+            FrontendReview(
+                author=author,
+                rating=float(rating) if rating else None,
+                snippet=snippet,
+                sourceName=source,
+                sourceUrl=url or poi.verified_url or poi.source_url or "https://maps.google.com",
+            )
+        )
+    return out
 
 
 def _build_single_quest(
@@ -352,6 +419,8 @@ def _build_single_quest(
     user_lng: float,
     req_start_iso: str,
     force_snack: bool = False,
+    meal_place: Optional[QuestCandidate] = None,
+    drop_meal: bool = False,  # live search found nothing real nearby: skip the stop rather than invent one
 ) -> FrontendQuest:
     """Synthesizes a single FrontendQuest with realistic Stop timeline and metrics."""
     stops: List[FrontendStop] = []
@@ -367,33 +436,8 @@ def _build_single_quest(
     stop1_dwell = primary_poi.estimated_dwell_minutes
     stop1_cost = primary_poi.estimated_admission
 
-    # Review conversion
-    poi_reviews: List[FrontendReview] = []
-    if primary_poi.reviews:
-        for r in primary_poi.reviews[:3]:
-            if isinstance(r, dict):
-                r_author = r.get("author", "Local Explorer")
-                r_rating = float(r.get("rating", 5.0))
-                r_snippet = r.get("text") or r.get("snippet", "Authentic visitor experience in Los Angeles.")
-                r_source = r.get("source") or r.get("sourceName", "Google Maps")
-                r_url = r.get("sourceUrl") or getattr(primary_poi, "verified_url", None) or getattr(primary_poi, "source_url", "https://maps.google.com")
-            else:
-                r_author = getattr(r, "author", "Local Explorer")
-                r_rating = float(getattr(r, "rating", 5.0))
-                r_snippet = getattr(r, "text", None) or getattr(r, "snippet", "Authentic visitor experience in Los Angeles.")
-                r_source = getattr(r, "source", None) or getattr(r, "sourceName", "Google Maps")
-                r_url = getattr(r, "source_url", None) or getattr(primary_poi, "verified_url", None) or getattr(primary_poi, "source_url", "https://maps.google.com")
+    poi_reviews = _frontend_reviews(primary_poi)  # real reviews only; empty when there are none
 
-            poi_reviews.append(
-                FrontendReview(
-                    author=r_author,
-                    rating=r_rating,
-                    snippet=r_snippet,
-                    sourceName=r_source,
-                    sourceUrl=r_url,
-                )
-            )
-    # No reviews -> send none. The contract promises real snippets, so never invent one.
 
     canonical_poi_url = primary_poi.verified_url or primary_poi.source_url or "https://maps.google.com"
 
@@ -426,8 +470,39 @@ def _build_single_quest(
     total_cost = stop1_cost
 
     # Leg 2 / Stop 2: Opportunistic Dining / Snack Checkpoint
-    has_meal = (meal and meal.recommended and meal.spot_name) or force_snack
-    if has_meal:
+    has_meal = ((meal and meal.recommended and meal.spot_name) or force_snack) and not drop_meal
+    if has_meal and meal_place is not None:
+        hop_miles = max(0.1, round(haversine_miles(primary_poi.lat, primary_poi.lng, meal_place.lat, meal_place.lng) * 1.25, 1))
+        hop_mode: Literal["driving", "walking", "transit"] = "walking" if hop_miles <= 1.2 else "driving"
+        hop_mins = max(3, int(hop_miles * 19.3)) if hop_mode == "walking" else max(5, int(hop_miles / 22.0 * 60) + 5)
+        meal_dwell = meal_place.estimated_dwell_minutes
+        stop2 = FrontendStop(
+            id=f"stop-meal-{meal_place.id}-{quest_index}",
+            order=2,
+            name=meal_place.name,
+            category=meal_place.category or "Restaurant",
+            address=meal_place.address or f"Near {primary_poi.name}",
+            lat=meal_place.lat,
+            lng=meal_place.lng,
+            startTime=add_minutes_iso(stop1_start_iso, stop1_dwell + hop_mins),
+            durationMinutes=meal_dwell,
+            estimatedCost=meal_place.admission_cost,
+            costIsEstimate=meal_place.cost_is_estimate and meal_place.admission_cost > 0,
+            distanceFromPreviousMiles=hop_miles,
+            travelFromPreviousMinutes=hop_mins,
+            travelMode=hop_mode,
+            rating=meal_place.rating or None,
+            reviewCount=meal_place.review_count or None,
+            reviewSummary=meal_place.review_summary or (meal.reasoning if meal else ""),
+            reviews=_frontend_reviews(meal_place),
+            sourceUrl=meal_place.verified_url or None,
+        )
+        stops.append(stop2)
+        elapsed_minutes += hop_mins + meal_dwell
+        total_travel_mins += hop_mins
+        total_distance_miles += hop_miles
+        total_cost += meal_place.admission_cost
+    elif has_meal:
         meal_name = meal.spot_name if (meal and meal.spot_name) else "Boba Time Roasted Milk Tea"
         meal_cost = meal.estimated_cost if meal else 6.50
         meal_dwell = meal.dwell_mins if meal else 20

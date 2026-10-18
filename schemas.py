@@ -121,6 +121,10 @@ class ScoutQuery(Model):
     max_admission: float
     departure_time: Optional[str] = None
     return_cutoff: Optional[str] = None
+    # Exact start point and the user's max travel distance (frontend path); None = area-only search
+    origin_lat: Optional[float] = None
+    origin_lng: Optional[float] = None
+    radius_miles: Optional[float] = None
 
 
 class ScoutResult(Model):

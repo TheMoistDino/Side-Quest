@@ -25,6 +25,9 @@ class QuestConstraints(BaseModel):
     vibe: str = Field(default="adventure", description="Requested vibe or activity type")
     departure_time: Optional[str] = Field(default=None, description="Preferred departure time string")
     return_cutoff: Optional[str] = Field(default=None, description="Hard deadline to return")
+    origin_lat: Optional[float] = Field(default=None, description="Exact start latitude (frontend requests)")
+    origin_lng: Optional[float] = Field(default=None, description="Exact start longitude (frontend requests)")
+    max_distance_miles: Optional[float] = Field(default=None, description="Max travel radius from the start")
 
 
 class ItineraryStop(BaseModel):

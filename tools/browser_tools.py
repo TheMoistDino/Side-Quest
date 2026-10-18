@@ -11,11 +11,12 @@ Provides:
 
 import os
 import re
+import math
 import uuid
 import asyncio
 import urllib.parse
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import httpx
 import requests
 from dotenv import load_dotenv
@@ -519,10 +520,10 @@ GOOGLE_PLACES_FIELDS = ",".join(
 # Google only gives a price *level*, so these are per-person estimates (flagged as such downstream).
 PRICE_LEVEL_ESTIMATE_USD = {
     "PRICE_LEVEL_FREE": 0.0,
-    "PRICE_LEVEL_INEXPENSIVE": 12.0,
-    "PRICE_LEVEL_MODERATE": 25.0,
-    "PRICE_LEVEL_EXPENSIVE": 45.0,
-    "PRICE_LEVEL_VERY_EXPENSIVE": 80.0,
+    "PRICE_LEVEL_INEXPENSIVE": 10.0,  # Google's "$" is roughly $1-10 per person
+    "PRICE_LEVEL_MODERATE": 20.0,
+    "PRICE_LEVEL_EXPENSIVE": 35.0,
+    "PRICE_LEVEL_VERY_EXPENSIVE": 60.0,
 }
 
 
@@ -532,8 +533,57 @@ def in_los_angeles(area: str) -> str:
     return area if "los angeles" in area.lower() else f"{area}, Los Angeles"
 
 
-def google_places_search(text_query: str, max_results: int = 4, timeout: float = 5.0):
-    """Text Search (Places API New). Returns (places, status) and never raises."""
+def haversine_miles(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    r = 3958.8
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = math.radians(lat2 - lat1), math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def within_radius(
+    candidates: List[QuestCandidate],
+    center: Optional[Tuple[float, float]],
+    radius_miles: Optional[float],
+) -> List[QuestCandidate]:
+    """Keeps candidates inside the user's max distance (straight line), nearest first."""
+    if not center or not radius_miles:
+        return candidates
+    scored = sorted(candidates, key=lambda c: haversine_miles(center[0], center[1], c.lat, c.lng))
+    return [c for c in scored if haversine_miles(center[0], center[1], c.lat, c.lng) <= radius_miles]
+
+
+def price_levels_for_budget(budget_usd: float) -> List[str]:
+    """Google price levels whose per-person estimate fits the budget (at least the cheapest tier)."""
+    levels = [lvl for lvl, est in PRICE_LEVEL_ESTIMATE_USD.items() if lvl != "PRICE_LEVEL_FREE" and est <= budget_usd]
+    return levels or ["PRICE_LEVEL_INEXPENSIVE"]
+
+
+def _places_body(text_query, max_results, center, radius_miles, price_levels, rank_by_distance) -> Dict[str, Any]:
+    body: Dict[str, Any] = {"textQuery": text_query, "maxResultCount": max_results}
+    if center:
+        meters = min(50000.0, max(500.0, (radius_miles or 5.0) * 1609.34))  # API caps the circle at 50 km
+        body["locationBias"] = {
+            "circle": {"center": {"latitude": center[0], "longitude": center[1]}, "radius": meters}
+        }
+        if rank_by_distance:
+            body["rankPreference"] = "DISTANCE"
+    if price_levels:
+        body["priceLevels"] = price_levels
+    return body
+
+
+def google_places_search(
+    text_query: str,
+    max_results: int = 4,
+    timeout: float = 5.0,
+    center: Optional[Tuple[float, float]] = None,
+    radius_miles: Optional[float] = None,
+    price_levels: Optional[List[str]] = None,
+    rank_by_distance: bool = False,
+):
+    """Text Search (Places API New). Returns (places, status) and never raises.
+    `center` + `radius_miles` bias results toward a circle (callers still filter by distance)."""
     key = (os.getenv("GOOGLE_PLACES_API_KEY") or os.getenv("GOOGLE_MAPS_API_KEY") or "").strip()
     if not key:
         return [], "no API key set"
@@ -545,7 +595,7 @@ def google_places_search(text_query: str, max_results: int = 4, timeout: float =
                 "X-Goog-Api-Key": key,
                 "X-Goog-FieldMask": GOOGLE_PLACES_FIELDS,
             },
-            json={"textQuery": text_query, "maxResultCount": max_results},
+            json=_places_body(text_query, max_results, center, radius_miles, price_levels, rank_by_distance),
             timeout=timeout,
         )
     except requests.RequestException as err:
@@ -631,22 +681,75 @@ async def google_place_candidates(
     dwell_for,
     unknown_cost: float,
     perk: str,
-    max_results: int = 4,
+    max_results: int = 6,
+    center: Optional[Tuple[float, float]] = None,
+    radius_miles: Optional[float] = None,
+    price_levels: Optional[List[str]] = None,
 ) -> List[QuestCandidate]:
     """Live discovery for a scout. Logs which source was used; returns [] so callers fall back to the catalog."""
-    places, status = await asyncio.to_thread(google_places_search, text_query, max_results)
-    source = "using live results" if places else "falling back to catalog"
+    places, status = await asyncio.to_thread(
+        google_places_search, text_query, max_results, 5.0, center, radius_miles, price_levels
+    )
+    candidates = within_radius(
+        [
+            place_to_candidate(
+                p,
+                category_fallback=category_fallback,
+                dwell_mins=dwell_for(p.get("primaryType", "")),
+                unknown_cost=unknown_cost,
+                perk=perk,
+            )
+            for p in places
+        ],
+        center,
+        radius_miles,
+    )
+    if places and radius_miles and center:
+        status += f", {len(candidates)} within {radius_miles:g} mi"
+    source = "using live results" if candidates else "falling back to catalog"
     print(f"INFO:     [{scout_name}]: 📍 Google Places '{text_query}' -> {status}; {source}", flush=True)
-    return [
+    return candidates
+
+
+async def google_meal_near(
+    lat: float,
+    lng: float,
+    *,
+    kind: str,
+    max_cost: float,
+    exclude_names: Optional[set] = None,
+):
+    """Real restaurants ("meal") or cafe/dessert spots ("snack") within a mile of a stop, priced
+    within `max_cost`, best first. Returns (options, searched); searched=False means no API key,
+    so callers should keep the budget agent's catalog pick."""
+    query = "restaurants" if kind == "meal" else "coffee, dessert or boba"
+    places, status = await asyncio.to_thread(
+        google_places_search, query, 8, 5.0, (lat, lng), 1.0, price_levels_for_budget(max_cost), True
+    )
+    exclude = {n.lower() for n in (exclude_names or set())}
+    options = [
         place_to_candidate(
             p,
-            category_fallback=category_fallback,
-            dwell_mins=dwell_for(p.get("primaryType", "")),
-            unknown_cost=unknown_cost,
-            perk=perk,
+            category_fallback="Restaurant" if kind == "meal" else "Cafe",
+            dwell_mins=45 if kind == "meal" else 20,
+            unknown_cost=15.0 if kind == "meal" else 7.0,
+            perk="+20 Live Discovery Bonus",
         )
         for p in places
     ]
+    options = [
+        o for o in within_radius(options, (lat, lng), 1.0)
+        if o.name.lower() not in exclude and o.admission_cost <= max_cost
+    ]
+    # Best-rated nearby spots with a meaningful number of ratings, so picks vary with location instead of a fixed list.
+    options.sort(key=lambda o: (o.review_count >= 50, o.rating), reverse=True)
+    searched = status != "no API key set"
+    print(
+        f"INFO:     [Budget Agent]: 📍 Google Places {kind} near ({lat:.4f}, {lng:.4f}) under ${max_cost:.0f} -> "
+        f"{status}; {len(options)} fit",
+        flush=True,
+    )
+    return options, searched
 
 
 async def ground_and_validate_candidates(
