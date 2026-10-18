@@ -119,19 +119,34 @@ def bound_dwell_time(category: str, raw_dwell: int) -> int:
 
 
 def is_open_during_window(
-    opening_hours: str,
+    opening_hours: Any,
     departure_time: Optional[str] = None,
     return_cutoff: Optional[str] = None,
+    business_status: str = "OPERATIONAL",
+    permanently_closed: bool = False,
 ) -> bool:
     """
     Verifies venue is operational during the specified travel window or current day/time.
+    Supports either an opening_hours string or a QuestCandidate object directly.
     Returns False if venue is demonstrably closed; True if open or if hours are flexible.
     """
+    if hasattr(opening_hours, "opening_hours"):
+        cand = opening_hours
+        opening_hours = getattr(cand, "opening_hours", "")
+        business_status = getattr(cand, "business_status", business_status)
+        permanently_closed = getattr(cand, "permanently_closed", permanently_closed)
+
+    if permanently_closed or business_status in ["CLOSED_PERMANENTLY", "CLOSED_TEMPORARILY"]:
+        return False
+
     if not opening_hours:
         return True
 
     text = opening_hours.strip()
     text_lower = text.lower()
+
+    if any(phrase in text_lower for phrase in ["permanently closed", "temporarily closed", "closed indefinitely"]):
+        return False
 
     if any(phrase in text_lower for phrase in ["open 24", "24/7", "sunrise", "always open"]):
         return True
@@ -286,28 +301,29 @@ LA_POI_CATALOG: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
                 "verified_url": "https://www.google.com/maps/search/?api=1&query=UCLA+Mathias+Botanical+Garden+707+Tiverton+Dr+Los+Angeles+CA",
             },
             {
-                "name": "Espresso Profeta Secret Brick Patio",
-                "lat": 34.0620,
-                "lng": -118.4465,
-                "admission": 7.0,
-                "dwell": 25,
-                "hours": "7:00 AM - 6:00 PM (Daily)",
-                "desc": "Artisanal velvet latte under ivy-covered brick arches.",
-                "perk": "+10 Agility, Caffeine Buff",
-                "address": "1129 Glendon Ave, Los Angeles, CA 90024",
+                "name": "Upside Down Coffee & Community Space",
+                "lat": 34.0632,
+                "lng": -118.4448,
+                "admission": 6.5,
+                "dwell": 35,
+                "hours": "7:30 AM - 5:00 PM (Daily)",
+                "desc": "Non-profit specialty coffee bar and community art space with sunny courtyard patio.",
+                "perk": "+15 Social Morale, Community Insight",
+                "address": "10962 Le Conte Ave, Los Angeles, CA 90024",
                 "category": "Coffee & Tea",
-                "rating": 4.5,
-                "reviewCount": 980,
-                "reviewSummary": "Artisan espresso drinks served in an ivy-draped brick alley courtyard away from Westwood traffic.",
+                "rating": 4.8,
+                "reviewCount": 420,
+                "reviewSummary": "A welcoming Westwood gathering space known for artisan pour-overs, friendly baristas, and relaxing outdoor patio.",
                 "reviews": [
                     {
-                        "author": "Sam R.",
+                        "author": "Marcus L.",
                         "rating": 5.0,
-                        "text": "Best velvet latte in LA. The patio feels like a slice of Europe in Westwood.",
-                        "source": "Yelp",
+                        "text": "Excellent pour-overs, friendly baristas, and lovely community patio away from campus rush.",
+                        "source": "Google Maps",
                     }
                 ],
-                "verified_url": "https://www.google.com/maps/search/?api=1&query=Espresso+Profeta+1129+Glendon+Ave+Los+Angeles+CA+90024",
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Upside+Down+Coffee+10962+Le+Conte+Ave+Los+Angeles+CA",
+                "business_status": "OPERATIONAL",
             },
         ],
         "food": [
@@ -510,6 +526,58 @@ LA_POI_CATALOG: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
         ],
     },
     "santa monica": {
+        "outdoors": [
+            {
+                "name": "Ocean View Park Bluff Trail",
+                "lat": 34.0042,
+                "lng": -118.4842,
+                "admission": 0.0,
+                "dwell": 50,
+                "hours": "Sunrise - Sunset (Daily)",
+                "desc": "Panoramic Pacific Palisades coastal bluffs overlooking Santa Monica and Venice beaches.",
+                "perk": "+20 Vitality, Ocean Clarity",
+                "address": "2701 Barnard Way, Santa Monica, CA 90405",
+                "category": "outdoors",
+                "rating": 4.8,
+                "reviewCount": 1600,
+                "reviewSummary": "Peaceful coastal trail perched on ocean bluffs with continuous sea breezes and unobstructed sunset vistas.",
+                "reviews": [
+                    {
+                        "author": "Brandon H.",
+                        "rating": 5.0,
+                        "text": "One of the best quiet ocean lookouts on the Westside. Watching the sunset here never gets old.",
+                        "source": "Google Maps",
+                    }
+                ],
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Ocean+View+Park+2701+Barnard+Way+Santa+Monica+CA",
+                "business_status": "OPERATIONAL",
+            },
+            {
+                "name": "Santa Monica Stairs & Ocean Promenade",
+                "lat": 34.0321,
+                "lng": -118.5135,
+                "admission": 0.0,
+                "dwell": 45,
+                "hours": "Sunrise - Sunset (Daily)",
+                "desc": "Renowned outdoor fitness steps leading down into Santa Monica canyon with coastal air.",
+                "perk": "+30 Cardiovascular Stamina",
+                "address": "699 Adelaide Dr, Santa Monica, CA 90402",
+                "category": "outdoors",
+                "rating": 4.6,
+                "reviewCount": 890,
+                "reviewSummary": "Steep wooden outdoor steps offering an intense cardiovascular workout with refreshing ocean breezes.",
+                "reviews": [
+                    {
+                        "author": "Megan F.",
+                        "rating": 5.0,
+                        "text": "Great outdoor leg workout with coastal breezes at the top of the canyon.",
+                        "source": "AllTrails",
+                    }
+                ],
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Santa+Monica+Stairs+Adelaide+Dr+Santa+Monica+CA",
+                "business_status": "OPERATIONAL",
+            },
+        ],
         "chill": [
             {
                 "name": "Ocean View Park Bluff Walk",
@@ -817,7 +885,12 @@ def search_live_pois(area: str, category: str, max_admission: float) -> List[Que
             headers = {
                 "Content-Type": "application/json",
                 "X-Goog-Api-Key": google_key.strip(),
-                "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location,places.regularOpeningHours,places.rating,places.userRatingCount,places.websiteUri,places.reviews",
+                "X-Goog-FieldMask": (
+                    "places.id,places.displayName,places.formattedAddress,places.location,"
+                    "places.regularOpeningHours,places.currentOpeningHours,places.businessStatus,"
+                    "places.rating,places.userRatingCount,places.websiteUri,places.reviews,"
+                    "places.generativeSummary,places.reviewSummary"
+                ),
             }
             body = {"textQuery": f"{category} in {area} Los Angeles", "maxResultCount": 3}
             res = requests.post(url, headers=headers, json=body, timeout=4.0)
@@ -825,6 +898,11 @@ def search_live_pois(area: str, category: str, max_admission: float) -> List[Que
                 data = res.json()
                 candidates: List[QuestCandidate] = []
                 for p in data.get("places", []):
+                    # Filter out temporary and permanent closures
+                    b_status = p.get("businessStatus", "OPERATIONAL")
+                    if b_status in ["CLOSED_PERMANENTLY", "CLOSED_TEMPORARILY"]:
+                        continue
+
                     p_name = p.get("displayName", {}).get("text", f"{area} Highlight")
                     p_addr = p.get("formattedAddress", f"{area}, Los Angeles, CA")
                     loc = p.get("location", {})
@@ -849,6 +927,17 @@ def search_live_pois(area: str, category: str, max_admission: float) -> List[Que
                     maps_url = make_deterministic_maps_url(p_name, p_addr, place_id=place_id)
                     final_url = website_uri if website_uri else maps_url
 
+                    # Google Places Review Summaries aggregation
+                    rev_summary = ""
+                    if p.get("reviewSummary", {}).get("text", {}).get("text"):
+                        rev_summary = p["reviewSummary"]["text"]["text"]
+                    elif p.get("generativeSummary", {}).get("overview", {}).get("text"):
+                        rev_summary = p["generativeSummary"]["overview"]["text"]
+                    elif verified_reviews:
+                        rev_summary = f"Visitors highlight: {verified_reviews[0].text[:120]}..."
+                    else:
+                        rev_summary = f"Verified Google Places discovery in {area}."
+
                     candidates.append(
                         QuestCandidate(
                             id=str(uuid.uuid4())[:8],
@@ -867,7 +956,9 @@ def search_live_pois(area: str, category: str, max_admission: float) -> List[Que
                             category=category.capitalize(),
                             rating=float(p.get("rating", 4.6)),
                             review_count=int(p.get("userRatingCount", 250)),
-                            review_summary=f"Verified Google Places discovery in {area}.",
+                            review_summary=rev_summary,
+                            business_status=b_status,
+                            permanently_closed=(b_status == "CLOSED_PERMANENTLY"),
                         )
                     )
                 if candidates:
@@ -955,6 +1046,8 @@ def query_poi_database(
     for cat_key, items in region.items():
         if cat_key in cat_clean or cat_clean in cat_key:
             matched_items.extend(items)
+        elif any(sub in cat_clean for sub in ["outdoor", "outdoors", "trail", "hike", "nature", "beach", "adventure", "active"]) and cat_key in ["outdoors", "trails", "chill"]:
+            matched_items.extend(items)
         elif any(sub in cat_clean for sub in ["thrift", "vintage", "shop", "boutique"]) and cat_key in ["thrifting", "thrift", "art"]:
             matched_items.extend(items)
         elif any(sub in cat_clean for sub in ["coffee", "tea", "cafe", "boba"]) and cat_key in ["coffee", "chill"]:
@@ -969,12 +1062,22 @@ def query_poi_database(
 
     candidates: List[QuestCandidate] = []
     for item in matched_items:
+        # Check closures and business status
+        if item.get("permanently_closed") or item.get("business_status") in ["CLOSED_PERMANENTLY", "CLOSED_TEMPORARILY"]:
+            continue
+
         # Budget filter
         if item["admission"] > max_admission and max_admission > 0.0:
             continue
 
         # Operating hours filter
-        if not is_open_during_window(item.get("hours", ""), departure_time, return_cutoff):
+        if not is_open_during_window(
+            item.get("hours", ""),
+            departure_time,
+            return_cutoff,
+            business_status=item.get("business_status", "OPERATIONAL"),
+            permanently_closed=item.get("permanently_closed", False),
+        ):
             continue
 
         # Bounded dwell time
@@ -1115,21 +1218,26 @@ async def route_ensemble_query(
 
     # Detect category intents
     wants_dining = any(k in cat_lower for k in ["food", "dining", "cafe", "coffee", "dessert", "boba", "ramen", "eat", "snack"])
-    wants_trails = any(k in cat_lower for k in ["trail", "outdoor", "walk", "park", "hike", "nature", "beach"])
+    wants_trails = any(k in cat_lower for k in ["trail", "outdoor", "outdoors", "walk", "park", "hike", "nature", "beach", "adventure", "active", "stairs"])
     wants_culture = any(k in cat_lower for k in ["culture", "museum", "art", "gallery", "historic", "thrift", "vintage", "book"])
 
-    # If category is mixed, general ("chill", "adventure"), or matched multiple intents
-    if not (wants_dining or wants_trails or wants_culture) or cat_lower in ["mixed", "chill", "all", ""]:
-        tasks.append(query_dining_scout(area=area, budget_max=max_admission, session_id=session_id))
+    if wants_trails and not wants_dining:
+        # User explicitly requested outdoor adventure/trails; query TrailsScout only
+        tasks.append(query_trails_scout(area=area, intensity="moderate", time_window_mins=90, session_id=session_id))
+    elif wants_culture and not wants_dining:
+        tasks.append(query_culture_scout(area=area, admission_max=max_admission, session_id=session_id))
+    elif wants_dining and not (wants_trails or wants_culture):
+        tasks.append(query_dining_scout(area=area, cuisine=category, budget_max=max_admission, session_id=session_id))
+    elif cat_lower in ["chill", "relaxation"]:
+        # Chill prioritizes scenic parks/trails and culture before dining
         tasks.append(query_trails_scout(area=area, time_window_mins=90, session_id=session_id))
         tasks.append(query_culture_scout(area=area, admission_max=max_admission, session_id=session_id))
+        tasks.append(query_dining_scout(area=area, budget_max=max_admission, session_id=session_id))
     else:
-        if wants_dining:
-            tasks.append(query_dining_scout(area=area, cuisine=category, budget_max=max_admission, session_id=session_id))
-        if wants_trails:
-            tasks.append(query_trails_scout(area=area, intensity="moderate", time_window_mins=90, session_id=session_id))
-        if wants_culture:
-            tasks.append(query_culture_scout(area=area, admission_max=max_admission, session_id=session_id))
+        # Mixed or general exploration: balanced ensemble with trails and culture first
+        tasks.append(query_trails_scout(area=area, time_window_mins=90, session_id=session_id))
+        tasks.append(query_culture_scout(area=area, admission_max=max_admission, session_id=session_id))
+        tasks.append(query_dining_scout(area=area, budget_max=max_admission, session_id=session_id))
 
     results = await asyncio.gather(*tasks)
     aggregated: List[QuestCandidate] = []

@@ -17,9 +17,19 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
+import warnings
+import logging
+
+# Suppress noisy ledger contract polling warnings and python deprecation warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+logging.getLogger("uagents.network").setLevel(logging.ERROR)
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
+import dns_resilience
+dns_resilience.apply_dns_patches()
 
 from uagents import Bureau
 

@@ -25,6 +25,10 @@ class QuestConstraints(BaseModel):
     vibe: str = Field(default="adventure", description="Requested vibe or activity type")
     departure_time: Optional[str] = Field(default=None, description="Preferred departure time string")
     return_cutoff: Optional[str] = Field(default=None, description="Hard deadline to return")
+    max_distance_miles: float = Field(default=10.0, description="Max travel radius in miles")
+    group_size: int = Field(default=1, description="Party size")
+    user_lat: float = Field(default=34.0635, description="Starting latitude")
+    user_lng: float = Field(default=-118.4455, description="Starting longitude")
 
 
 class ItineraryStop(BaseModel):
@@ -81,11 +85,20 @@ LA_QUEST_CATALOG: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
                 "perk": "+25 Mental Resilience, Stress Purge",
             },
             {
-                "name": "Espresso Profeta Secret Brick Patio",
-                "dwell": 40,
-                "cost": 7.5,
-                "desc": "Sip an artisan velvet latte under ivy-covered brick arches.",
-                "perk": "+10 Agility, Caffeine Buff",
+                "name": "Upside Down Coffee & Community Space",
+                "dwell": 35,
+                "cost": 6.5,
+                "desc": "Non-profit specialty coffee bar and community gallery patio.",
+                "perk": "+15 Social Morale, Community Insight",
+            },
+        ],
+        "outdoors": [
+            {
+                "name": "UCLA Mathias Botanical Garden Canopy Walk",
+                "dwell": 50,
+                "cost": 0.0,
+                "desc": "Scenic outdoor trail navigating native redwood groves and streams.",
+                "perk": "+25 Botanical Lore, Stamina Restore",
             },
         ],
         "food": [
@@ -115,6 +128,29 @@ LA_QUEST_CATALOG: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
         ],
     },
     "santa monica": {
+        "outdoors": [
+            {
+                "name": "Ocean View Park Bluff Trail",
+                "dwell": 50,
+                "cost": 0.0,
+                "desc": "Coastal bluff trail overlooking the Pacific Ocean with sea breeze and vista.",
+                "perk": "+30 Ocean Clarity, Cardiovascular Boost",
+            },
+            {
+                "name": "Santa Monica Stairs & Ocean Promenade",
+                "dwell": 45,
+                "cost": 0.0,
+                "desc": "Famous steep wooden canyon outdoor workout stairs with panoramic ocean views.",
+                "perk": "+35 Athletic Stamina, Leg Power Buff",
+            },
+            {
+                "name": "Palisades Park Coastal Bluffs Trail",
+                "dwell": 55,
+                "cost": 0.0,
+                "desc": "1.6-mile palm-lined blufftop walking trail with dramatic ocean panoramas.",
+                "perk": "+25 Coastal Vigor",
+            },
+        ],
         "chill": [
             {
                 "name": "Ocean View Park Bluff Walk",
@@ -284,6 +320,24 @@ OPPORTUNISTIC_SNACKS: List[Dict[str, Any]] = [
 ]
 
 
+def parse_time_str(time_str: str) -> Optional[datetime]:
+    """Parse time string like '2:00 PM', '14:30', '2pm', '4:30 PM' into today's datetime."""
+    clean = time_str.strip().upper()
+    if not clean:
+        return None
+    clean = re.sub(r"(\d+)(AM|PM)", r"\1 \2", clean)
+    if ":" not in clean and ("AM" in clean or "PM" in clean):
+        clean = re.sub(r"(\d+)\s*(AM|PM)", r"\1:00 \2", clean)
+    for fmt in ["%I:%M %p", "%H:%M", "%I %p"]:
+        try:
+            parsed = datetime.strptime(clean, fmt)
+            now = datetime.now()
+            return now.replace(hour=parsed.hour, minute=parsed.minute, second=0, microsecond=0)
+        except ValueError:
+            pass
+    return None
+
+
 def extract_constraints(user_text: str) -> QuestConstraints:
     """Extract temporal, financial, and spatial constraints using robust regex & heuristics."""
     text_lower = user_text.lower()
@@ -300,6 +354,14 @@ def extract_constraints(user_text: str) -> QuestConstraints:
         if min_match:
             constraints.duration_minutes = int(min_match.group(1))
 
+    # Departure time extraction: "it is 2:00 PM", "starting at 2pm", "departs at 14:00"
+    dep_match = re.search(
+        r"\b(?:it is|it's|start(?:ing)?(?: at)?|depart(?:ing|s)?(?: at)?)\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b",
+        text_lower,
+    )
+    if dep_match:
+        constraints.departure_time = dep_match.group(1)
+
     # Matches window ranges: "from 2pm to 5pm", "between 14:00 and 17:30"
     window_match = re.search(
         r"(?:from|between)\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*(?:to|and|-)\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)",
@@ -308,13 +370,25 @@ def extract_constraints(user_text: str) -> QuestConstraints:
     if window_match:
         constraints.departure_time = window_match.group(1)
         constraints.return_cutoff = window_match.group(2)
-        # Attempt rough delta calculation if both have pm/am
-        # Default duration fallback is preserved if calculation fails
 
-    # Hard return cutoff: "back by 6pm", "return before 8:30 pm"
-    cutoff_match = re.search(r"(?:back by|return (?:by|before)|until)\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)", text_lower)
+    # Hard return cutoff: "back home in Santa Monica by 4:30 pm", "back by 6pm", "return before 8:30 pm"
+    cutoff_match = re.search(
+        r"(?:back(?: home)?(?:\s+(?:in|to)\s+[a-zA-Z\s]+)?\s+by|return (?:by|before)|until|before)\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b",
+        text_lower,
+    )
     if cutoff_match:
         constraints.return_cutoff = cutoff_match.group(1)
+
+    # Calculate duration if departure and return cutoff are both identified
+    if constraints.departure_time and constraints.return_cutoff:
+        dt_dep = parse_time_str(constraints.departure_time)
+        dt_ret = parse_time_str(constraints.return_cutoff)
+        if dt_dep and dt_ret:
+            if dt_ret < dt_dep:
+                dt_ret += timedelta(days=1)
+            delta_mins = int((dt_ret - dt_dep).total_seconds() / 60)
+            if delta_mins > 0:
+                constraints.duration_minutes = delta_mins
 
     # 2. Fiscal Budget extraction
     # Priority A: Explicit numerical budget (e.g., "$35", "$ 50.00", "20 dollars", "budget of $45", "budget: 50")
@@ -322,7 +396,7 @@ def extract_constraints(user_text: str) -> QuestConstraints:
     if not budget_match:
         budget_match = re.search(r"(\d+(?:\.\d{1,2})?)\s*(?:dollars|bucks|usd)\b", text_lower)
     if not budget_match:
-        budget_match = re.search(r"\bbudget(?:\s*of|\s*:)?\s*\$?\s*(\d+(?:\.\d{1,2})?)\b", text_lower)
+        budget_match = re.search(r"\bbudget(?:\s*is|\s*of|\s*:)?\s*\$?\s*(\d+(?:\.\d{1,2})?)\b", text_lower)
 
     if budget_match:
         constraints.budget_usd = float(budget_match.group(1))
@@ -352,17 +426,20 @@ def extract_constraints(user_text: str) -> QuestConstraints:
             constraints.origin = name
             break
 
-    # 4. Vibe / Activity extraction (Using strict word boundaries to avoid false positives like "koreatown" -> "eat")
-    if re.search(r"\b(?:eat|eats|eating|snack|snacks|dinner|lunch|food|foodie|ramen|tacos|cookies?)\b", text_lower):
-        constraints.vibe = "food"
-    elif re.search(r"\b(?:museum|museums|gallery|galleries|art|paintings?|exhibit)\b", text_lower):
+    # 4. Vibe / Activity extraction
+    # Outdoors / Adventure / Trails takes priority when explicitly requested (e.g. "outdoor adventure quest")
+    if re.search(r"\b(?:outdoors?|adventure|trails?|hike|hiking|trek|park|beach|stairs|views?|viewpoint|active|nature|bluff|coast|coastal)\b", text_lower):
+        constraints.vibe = "outdoors"
+    elif re.search(r"\b(?:museum|museums|gallery|galleries|art|paintings?|exhibit|culture|sculpture)\b", text_lower):
         constraints.vibe = "art"
-    elif re.search(r"\b(?:nature|walk|walking|stroll|hike|hiking|park|garden|botanical|beach|ocean|chill|zen|relax|spa)\b", text_lower):
-        constraints.vibe = "chill"
+    elif re.search(r"\b(?:eat|eats|eating|snack|snacks|dinner|lunch|food|foodie|ramen|tacos|cookies?|bakery|coffee|cafe|dessert)\b", text_lower):
+        constraints.vibe = "food"
     elif re.search(r"\b(?:tech|internet|hacker|cyber|boelter|code)\b", text_lower):
         constraints.vibe = "tech"
     elif re.search(r"\b(?:arcade|bowling|games?|gaming|retro)\b", text_lower):
         constraints.vibe = "arcade"
+    elif re.search(r"\b(?:chill|zen|relax|relaxation|spa|peaceful|stroll)\b", text_lower):
+        constraints.vibe = "chill"
     else:
         constraints.vibe = "chill"
 
@@ -395,6 +472,8 @@ def synthesize_quest(constraints: QuestConstraints) -> QuestPlan:
     # Select Primary Quest based on vibe and region
     region_catalog = LA_QUEST_CATALOG.get(reg_key, LA_QUEST_CATALOG["westwood"])
     vibe_candidates = region_catalog.get(constraints.vibe, [])
+    if not vibe_candidates and constraints.vibe in ["outdoors", "adventure", "trails"]:
+        vibe_candidates = region_catalog.get("outdoors", [])
     if not vibe_candidates:
         # Fallback to any category in the region
         for cat in region_catalog.values():
@@ -648,11 +727,12 @@ def render_multiagent_rpg_log(
     current_t += timedelta(minutes=dwell_mins)
     t_obj_end = current_t.strftime("%H:%M")
     admit_str = f"${admission_cost:.2f}" if admission_cost > 0 else "FREE"
+    rev_intel = f"\n  > *Review Consensus*: {candidate.review_summary}" if getattr(candidate, "review_summary", None) else ""
     timeline_lines.append(
         f"- **[{t_obj_start} → {t_obj_end}]** 📍 **Primary Quest Waypoint**: `{candidate.name}` ({dwell_mins}m dwell | Admission: {admit_str})\n"
         f"  > *Intel*: {candidate.description}\n"
         f"  > *GPS Coordinates*: `{candidate.lat:.4f}, {candidate.lng:.4f}` | *Hours*: `{candidate.opening_hours}`\n"
-        f"  > *Equipped Perk*: `{candidate.perk}`"
+        f"  > *Equipped Perk*: `{candidate.perk}`{rev_intel}"
     )
 
     # Opportunistic Food Stop Leg
