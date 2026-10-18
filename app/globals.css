@@ -11,6 +11,8 @@
   --line: #2a2c30;
   --text: #f2f2f0;
   --muted: #9a9da3;
+  --sign-ink: #ffc72c;
+  --danger: #ef5b4c;
   color-scheme: dark;
 }
 
@@ -20,6 +22,9 @@
   --line: #e4e4e7;
   --text: #14161a;
   --muted: #5b5f66;
+  /* Chrome yellow is too light for text on white; this amber keeps ~4.7:1. */
+  --sign-ink: #9a6a00;
+  --danger: #c2382a;
   color-scheme: light;
 }
 
@@ -29,12 +34,13 @@
   --color-line: var(--line);
   --color-text: var(--text);
   --color-muted: var(--muted);
+  --color-sign-ink: var(--sign-ink);
+  --color-danger: var(--danger);
 }
 
 @theme {
   --color-sign: #ffc72c;
   --color-on-sign: #14161a;
-  --color-danger: #ef5b4c;
 
   --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;

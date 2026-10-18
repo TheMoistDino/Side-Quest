@@ -29,7 +29,7 @@ export function BigRange({ label, min, max, typedMax = max, increment = 1, value
           format={format}
           prefix={prefix}
           suffix={suffix}
-          className="font-display text-[88px] leading-[96px] font-extrabold tracking-[-0.04em] text-sign tabular-nums"
+          className="font-display text-[88px] leading-[96px] font-extrabold tracking-[-0.04em] text-sign-ink tabular-nums"
         />
       </div>
       <input

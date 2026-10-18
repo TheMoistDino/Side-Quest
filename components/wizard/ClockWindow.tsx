@@ -182,7 +182,7 @@ export function ClockWindow({ start, end, onChange, error }: Props) {
           {handle("end", p2, endMin)}
         </svg>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1 text-center">
-          <span className="font-display text-[40px] leading-[42px] font-extrabold tracking-tight text-sign tabular-nums whitespace-nowrap">
+          <span className="font-display text-[40px] leading-[42px] font-extrabold tracking-tight text-sign-ink tabular-nums whitespace-nowrap">
             {formatDuration(duration, { compact: true })}
           </span>
           <span className="text-sm font-medium tabular-nums">

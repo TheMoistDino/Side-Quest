@@ -26,7 +26,7 @@ export function PartyStepper({ value, onChange, min = 1, max = 20, onOverflow }:
           onChange={onChange}
           format={String}
           onOverflow={onOverflow}
-          className="font-display text-[88px] leading-[96px] font-extrabold tracking-[-0.04em] text-sign tabular-nums"
+          className="font-display text-[88px] leading-[96px] font-extrabold tracking-[-0.04em] text-sign-ink tabular-nums"
         />
       </div>
       <button

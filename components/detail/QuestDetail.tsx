@@ -34,7 +34,7 @@ export function QuestDetail({ quest, origin }: Props) {
         <h2 className="font-display text-[28px] leading-[30px] font-extrabold tracking-tight">{quest.title}</h2>
         <div className="flex flex-wrap gap-x-5 gap-y-2 pt-1">
           <div className="flex flex-col whitespace-nowrap">
-            <span className="font-display text-lg leading-6 font-extrabold text-sign">{total}</span>
+            <span className="font-display text-lg leading-6 font-extrabold text-sign-ink">{total}</span>
             <span className="text-xs text-muted">per person</span>
           </div>
           <StatBlock value={formatDuration(quest.totalDurationMinutes, { compact: true })} label="total" />
@@ -54,7 +54,7 @@ export function QuestDetail({ quest, origin }: Props) {
       <div className="flex items-center justify-between self-start rounded-2xl border border-line px-[18px] py-4 lg:col-start-1 lg:row-start-3">
         <div className="flex flex-col gap-0.5">
           <span className="text-xs text-muted">Total per person</span>
-          <span className="font-display text-2xl font-extrabold text-sign">{total}</span>
+          <span className="font-display text-2xl font-extrabold text-sign-ink">{total}</span>
         </div>
         <div className="flex flex-col items-end gap-0.5">
           <span className="text-xs text-muted">Time on the road</span>

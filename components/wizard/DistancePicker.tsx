@@ -37,7 +37,7 @@ export function DistancePicker({ value, onChange, location }: Props) {
           onChange={onChange}
           format={(v) => `${v} mi`}
           suffix=" mi"
-          className="font-display text-[56px] leading-[64px] font-extrabold tracking-[-0.04em] text-sign tabular-nums"
+          className="font-display text-[56px] leading-[64px] font-extrabold tracking-[-0.04em] text-sign-ink tabular-nums"
         />
         <span className="text-sm text-muted">radius</span>
       </div>
