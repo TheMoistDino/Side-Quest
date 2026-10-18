@@ -4,6 +4,10 @@ import { buildMockResponse } from "@/lib/mock";
 // Mock is the default. Set NEXT_PUBLIC_USE_MOCK=false to hit the real backend.
 const USE_MOCK = (process.env.NEXT_PUBLIC_USE_MOCK ?? "true") === "true";
 
+// Where POST /api/quest lives. Empty (default) = same origin as the Next.js app.
+// Set to e.g. http://127.0.0.1:8000 when the Python agent server runs separately.
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/+$/, "");
+
 // Dev-only: NEXT_PUBLIC_MOCK_SCENARIO=error | empty lets you preview those UI states.
 const MOCK_SCENARIO = process.env.NEXT_PUBLIC_MOCK_SCENARIO;
 
@@ -40,7 +44,7 @@ export async function generateQuests(req: QuestRequest): Promise<QuestResponse> 
 
   let res: Response;
   try {
-    res = await fetch("/api/quest", {
+    res = await fetch(`${API_BASE_URL}/api/quest`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),

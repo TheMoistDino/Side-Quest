@@ -159,7 +159,16 @@ All frontend fetching runs through `generateQuests(req)` in [`lib/api.ts`](lib/a
 | `NEXT_PUBLIC_USE_MOCK` | Behavior |
 | --- | --- |
 | `true` *(default)* | Returns sample LA sidequests from [`lib/mock.ts`](lib/mock.ts) after a 1.5s delay. |
-| `false` | Sends `POST /api/quest` with a `QuestRequest` payload. |
+| `false` | Sends `POST {NEXT_PUBLIC_API_BASE_URL}/api/quest` with a `QuestRequest` payload. |
+
+`NEXT_PUBLIC_API_BASE_URL` says where the backend lives. Leave it empty to call the same origin as the Next.js app; to use the Python agent server, point it at that server:
+
+```bash
+NEXT_PUBLIC_USE_MOCK=false
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000   # agent server's PORT
+```
+
+Restart `npm run dev` after changing either value (`NEXT_PUBLIC_*` variables are inlined at startup).
 
 To test specific UI states in mock mode:
 - `NEXT_PUBLIC_MOCK_SCENARIO=error` — Preview error screen with retry
