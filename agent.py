@@ -16,6 +16,7 @@ import sys
 import uuid
 import time
 import asyncio
+import inspect
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 
@@ -69,18 +70,23 @@ from adapters import (
     adapt_pipeline_to_acp_response,
 )
 
-# Apply global CORS wrapper to ASGIServer so browser requests from Next.js (port 3000) succeed
+# Apply global CORS wrapper to ASGIServer so browser requests from Next.js (port 3000) succeed.
+# Newer uagents (e.g. 0.26) already sends Access-Control-Allow-* on every response via uvicorn's
+# default headers. Adding them again makes browsers reject the response ("multiple values '*, *'"),
+# so only add the allow-headers when this uagents version doesn't.
 _original_asgi_send = ASGIServer._asgi_send
+_UAGENTS_SENDS_CORS = "Access-Control-Allow-Origin" in inspect.getsource(ASGIServer)
 
 async def _cors_asgi_send(self, send, status_code=200, headers=None, body=None):
     if headers is None:
         headers = {}
     if "Content-Type" not in headers and "content-type" not in headers and body is not None:
         headers["Content-Type"] = "application/json"
-    headers["Access-Control-Allow-Origin"] = "*"
-    headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, HEAD"
-    headers["Access-Control-Allow-Headers"] = "*"
-    headers["Access-Control-Max-Age"] = "86400"
+    if not _UAGENTS_SENDS_CORS:
+        headers["Access-Control-Allow-Origin"] = "*"
+        headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, HEAD"
+        headers["Access-Control-Allow-Headers"] = "*"
+    headers["Access-Control-Max-Age"] = "86400"  # uagents doesn't set this; safe to add once
     return await _original_asgi_send(self, send, status_code=status_code, headers=headers, body=body)
 
 ASGIServer._asgi_send = _cors_asgi_send
