@@ -1,22 +1,62 @@
-# Virtual environment
+# ==========================================
+# Dependencies & Package Managers
+# ==========================================
+node_modules/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Python Virtual Environments
 .venv/
 venv/
 ENV/
 
-# Byte-compiled / cache files
+# ==========================================
+# Python Cache & Bytecode
+# ==========================================
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Environment and secrets
-.env
+# ==========================================
+# Environment Variables & Secrets
+# ==========================================
+.env*
+!.env.example
 private_keys.json
 *.pem
 
+# ==========================================
+# Build & Output Directories
+# ==========================================
+.next/
+out/
+build/
+coverage/
+.vercel/
+
+# TypeScript cache
+*.tsbuildinfo
+next-env.d.ts
+
+# ==========================================
 # Logs
+# ==========================================
 *.log
 uagents_core.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
-# IDE files
+# ==========================================
+# OS & IDE Files
+# ==========================================
+.DS_Store
+Thumbs.db
 .vscode/
 .idea/

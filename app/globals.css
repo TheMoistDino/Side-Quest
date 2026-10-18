@@ -1,0 +1,153 @@
+@import "tailwindcss";
+
+/* Theme follows <html data-theme>. Dark is the default (see app/layout.tsx). */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Design tokens mirror the "Side Quest Board" Paper file, page "v2 — Minimal dark wizard". */
+:root,
+[data-theme="dark"] {
+  --bg: #0e0f11;
+  --surface: #17181b;
+  --line: #2a2c30;
+  --text: #f2f2f0;
+  --muted: #9a9da3;
+  --sign-ink: #ffc72c;
+  --danger: #ef5b4c;
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --bg: #ffffff;
+  --surface: #f4f4f5;
+  --line: #e4e4e7;
+  --text: #14161a;
+  --muted: #5b5f66;
+  /* Chrome yellow is too light for text on white; this amber keeps ~4.7:1. */
+  --sign-ink: #9a6a00;
+  --danger: #c2382a;
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-line: var(--line);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-sign-ink: var(--sign-ink);
+  --color-danger: var(--danger);
+}
+
+@theme {
+  --color-sign: #ffc72c;
+  --color-on-sign: #14161a;
+
+  --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --tracking-tight: -0.03em;
+
+  --animate-pulse-dot: pulse-dot 1.2s ease-in-out infinite;
+  --animate-rise: rise 0.35s ease-out both;
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 0.25; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  transition: background-color 0.2s, color 0.2s;
+}
+
+/* Range slider: text-colored fill up to --fill, solid round thumb. */
+.quest-range {
+  appearance: none;
+  width: 100%;
+  height: 24px;
+  background: transparent;
+  cursor: pointer;
+}
+.quest-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--color-text) var(--fill), var(--color-line) var(--fill));
+}
+.quest-range::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--color-text) var(--fill), var(--color-line) var(--fill));
+}
+.quest-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  margin-top: -10px;
+  border-radius: 999px;
+  background: var(--color-text);
+  border: 0;
+}
+.quest-range::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--color-text);
+  border: 0;
+}
+.quest-range:focus-visible {
+  outline: none;
+}
+.quest-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-sign) 45%, transparent);
+}
+.quest-range:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-sign) 45%, transparent);
+}
+
+/* Maps (radius + route): desaturated OSM tiles, inverted in dark mode so the yellow circle is the only color. */
+.quiet-map {
+  background: var(--color-surface);
+}
+.quiet-map .leaflet-tile-pane {
+  filter: grayscale(1) contrast(0.85) brightness(1.04);
+}
+[data-theme="dark"] .quiet-map .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) grayscale(1) brightness(0.8) contrast(0.9);
+}
+.quiet-map .leaflet-control-attribution {
+  background: color-mix(in srgb, var(--color-bg) 70%, transparent);
+  color: var(--color-muted);
+  font-size: 10px;
+}
+.quiet-map .leaflet-control-attribution a {
+  color: var(--color-muted);
+}
+
+/* Numbered stop markers on the route map (Leaflet divIcon). */
+.route-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 2px solid #14161a;
+  background: var(--color-sign);
+  color: #14161a;
+  font: 800 12px/1 var(--font-display);
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
