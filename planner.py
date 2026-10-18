@@ -126,6 +126,22 @@ LA_QUEST_CATALOG: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
                 "perk": "+50 Hacker Prestige, ARPANET Genesis Artifact",
             }
         ],
+        "arcade": [
+            {
+                "name": "Ackerman Union Game Zone & Arcade",
+                "dwell": 50,
+                "cost": 8.0,
+                "desc": "Campus gaming lounge with DDR, pool tables, pinball, and fighting games.",
+                "perk": "+25 Rhythm Agility, Bruin High Score",
+            },
+            {
+                "name": "Dave & Buster's West LA Arcade",
+                "dwell": 60,
+                "cost": 20.0,
+                "desc": "High-tech arcade with racing pods, VR games, and air hockey.",
+                "perk": "+35 High Score Chaser",
+            },
+        ],
     },
     "santa monica": {
         "outdoors": [
@@ -190,6 +206,22 @@ LA_QUEST_CATALOG: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
                 "cost": 6.0,
                 "desc": "Bite into a warm sourdough donut fried fresh every hour.",
                 "perk": "+10 Swiftness",
+            },
+        ],
+        "arcade": [
+            {
+                "name": "Playland Arcade on Santa Monica Pier",
+                "dwell": 50,
+                "cost": 15.0,
+                "desc": "Historic beachfront pier arcade featuring classic skeeball, pinball, and air hockey.",
+                "perk": "+30 Pier Nostalgia Buff",
+            },
+            {
+                "name": "Pacific Park Boardwalk Midway Games",
+                "dwell": 40,
+                "cost": 12.0,
+                "desc": "Classic oceanfront midway games including ring toss and balloon pop.",
+                "perk": "+20 Dexterity Buff",
             },
         ],
     },
@@ -284,6 +316,22 @@ LA_QUEST_CATALOG: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
                 "desc": "Ride the 1901 wooden funicular railway between Hill and Olive Streets.",
                 "perk": "+10 Nostalgia Charm",
             }
+        ],
+        "arcade": [
+            {
+                "name": "EightyTwo Vintage Arcade & Pinball",
+                "dwell": 60,
+                "cost": 10.0,
+                "desc": "Legendary vintage arcade featuring 55+ classic arcade cabinets and pinball.",
+                "perk": "+40 Nostalgia Mastery",
+            },
+            {
+                "name": "Two Bit Circus Micro-Amusement Park",
+                "dwell": 75,
+                "cost": 25.0,
+                "desc": "High-tech indie arcade with VR arenas and custom carnival games.",
+                "perk": "+45 Techno-Illusionist",
+            },
         ],
     },
 }

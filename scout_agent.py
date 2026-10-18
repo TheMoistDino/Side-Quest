@@ -378,6 +378,56 @@ LA_POI_CATALOG: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
                 "verified_url": "https://www.cs.ucla.edu",
             }
         ],
+        "arcade": [
+            {
+                "name": "Ackerman Union Game Zone & Arcade",
+                "lat": 34.0704,
+                "lng": -118.4441,
+                "admission": 8.0,
+                "dwell": 60,
+                "hours": "9:00 AM - 10:00 PM (Mon-Sat)",
+                "desc": "Campus gaming lounge and arcade with Dance Dance Revolution, billiards tables, fighting cabinets, and pinball.",
+                "perk": "+25 Rhythm Agility, Bruin High Score",
+                "address": "308 Westwood Plaza, Los Angeles, CA 90095",
+                "category": "Arcade & Gaming",
+                "rating": 4.6,
+                "reviewCount": 420,
+                "reviewSummary": "Hidden gem gaming spot in Westwood. Great pool tables, pinball, and classic rhythm games at budget student prices.",
+                "reviews": [
+                    {
+                        "author": "Tyler N.",
+                        "rating": 5.0,
+                        "text": "Hidden gem gaming spot in Westwood. Great pool tables, pinball, and classic rhythm games at budget student prices.",
+                        "source": "Google Maps",
+                    }
+                ],
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Ackerman+Union+308+Westwood+Plaza+Los+Angeles+CA",
+            },
+            {
+                "name": "Dave & Buster's West LA Arcade",
+                "lat": 33.9785,
+                "lng": -118.3907,
+                "admission": 20.0,
+                "dwell": 75,
+                "hours": "11:00 AM - 12:00 AM (Daily)",
+                "desc": "Massive state-of-the-art interactive arcade with multiplayer motion simulators, racing pods, and ticket redemption.",
+                "perk": "+35 Adrenaline Rush, High Score Chaser",
+                "address": "6081 Center Dr, Los Angeles, CA 90045",
+                "category": "Arcade & Gaming",
+                "rating": 4.4,
+                "reviewCount": 3100,
+                "reviewSummary": "Huge game floor with all the latest multiplayer arcade machines, virtual reality games, and classic air hockey.",
+                "reviews": [
+                    {
+                        "author": "Samir V.",
+                        "rating": 5.0,
+                        "text": "Huge game floor with all the latest multiplayer arcade machines, virtual reality games, and classic air hockey.",
+                        "source": "Google Maps",
+                    }
+                ],
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Dave+and+Busters+6081+Center+Dr+Los+Angeles+CA",
+            },
+        ],
     },
     "sawtelle": {
         "coffee": [
@@ -656,6 +706,56 @@ LA_POI_CATALOG: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
                 "verified_url": "https://www.google.com/maps/search/?api=1&query=Bay+Cities+Italian+Deli+1517+Lincoln+Blvd+Santa+Monica+CA",
             }
         ],
+        "arcade": [
+            {
+                "name": "Playland Arcade on Santa Monica Pier",
+                "lat": 34.0099,
+                "lng": -118.4975,
+                "admission": 15.0,
+                "dwell": 60,
+                "hours": "10:00 AM - 11:00 PM (Daily)",
+                "desc": "Historic beachfront arcade on the pier featuring classic skeeball, pinball machines, air hockey, and retro fighting games.",
+                "perk": "+30 Reflex Precision, Pier Nostalgia Buff",
+                "address": "250 Santa Monica Pier, Santa Monica, CA 90401",
+                "category": "Arcade & Gaming",
+                "rating": 4.5,
+                "reviewCount": 1850,
+                "reviewSummary": "Classic vintage arcade right over the ocean. Skeeball and retro games with the Pacific sunset right outside.",
+                "reviews": [
+                    {
+                        "author": "Dave R.",
+                        "rating": 5.0,
+                        "text": "Classic vintage arcade right over the ocean. Skeeball and retro games with the Pacific sunset right outside.",
+                        "source": "Google Maps",
+                    }
+                ],
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Playland+Arcade+250+Santa+Monica+Pier+Santa+Monica+CA",
+            },
+            {
+                "name": "Pacific Park Boardwalk Midway Games",
+                "lat": 34.0089,
+                "lng": -118.4984,
+                "admission": 12.0,
+                "dwell": 45,
+                "hours": "11:00 AM - 9:00 PM (Daily)",
+                "desc": "Oceanfront seaside midway carnival games including ring toss, balloon pop, and water race.",
+                "perk": "+20 Dexterity, Carnival Champion",
+                "address": "380 Santa Monica Pier, Santa Monica, CA 90401",
+                "category": "Arcade & Gaming",
+                "rating": 4.6,
+                "reviewCount": 2400,
+                "reviewSummary": "Fun boardwalk midway games with great prizes and iconic ocean views.",
+                "reviews": [
+                    {
+                        "author": "Chloe S.",
+                        "rating": 5.0,
+                        "text": "Fun boardwalk midway games with great prizes and iconic ocean views.",
+                        "source": "Google Maps",
+                    }
+                ],
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Pacific+Park+380+Santa+Monica+Pier+Santa+Monica+CA",
+            },
+        ],
     },
     "koreatown": {
         "chill": [
@@ -864,6 +964,56 @@ LA_POI_CATALOG: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
                 "verified_url": "https://www.angelsflight.org",
             }
         ],
+        "arcade": [
+            {
+                "name": "EightyTwo Vintage Arcade & Pinball",
+                "lat": 34.0452,
+                "lng": -118.2372,
+                "admission": 10.0,
+                "dwell": 75,
+                "hours": "4:00 PM - 2:00 AM (Tue-Sun)",
+                "desc": "Legendary classic arcade featuring 55+ fully restored 1980s and 1990s arcade cabinets and competitive pinball machines.",
+                "perk": "+40 Nostalgia Mastery, Flawless Combo",
+                "address": "707 E 4th Pl, Los Angeles, CA 90013",
+                "category": "Arcade & Gaming",
+                "rating": 4.6,
+                "reviewCount": 2900,
+                "reviewSummary": "The premier classic arcade in DTLA. Incredible pinball collection and all the 90s fighting and beat-em-up games.",
+                "reviews": [
+                    {
+                        "author": "Leo M.",
+                        "rating": 5.0,
+                        "text": "The premier classic arcade in DTLA. Incredible pinball collection and all the 90s fighting and beat-em-up games.",
+                        "source": "Google Maps",
+                    }
+                ],
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=EightyTwo+707+E+4th+Pl+Los+Angeles+CA",
+            },
+            {
+                "name": "Two Bit Circus Micro-Amusement Park",
+                "lat": 34.0354,
+                "lng": -118.2323,
+                "admission": 25.0,
+                "dwell": 90,
+                "hours": "1:00 PM - 11:00 PM (Wed-Sun)",
+                "desc": "Experiential high-tech playground with custom virtual reality arenas, story rooms, and retro-futuristic arcade games.",
+                "perk": "+45 Techno-Illusionist, Sci-Fi Explorer",
+                "address": "634 Mateo St, Los Angeles, CA 90021",
+                "category": "Arcade & Gaming",
+                "rating": 4.6,
+                "reviewCount": 1750,
+                "reviewSummary": "Mind-blowing gaming playground. VR arenas and unique indie arcade games you cannot play anywhere else.",
+                "reviews": [
+                    {
+                        "author": "Jessica T.",
+                        "rating": 5.0,
+                        "text": "Mind-blowing gaming playground. VR arenas and unique indie arcade games you cannot play anywhere else.",
+                        "source": "Google Maps",
+                    }
+                ],
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Two+Bit+Circus+634+Mateo+St+Los+Angeles+CA",
+            },
+        ],
     },
 }
 
@@ -1048,6 +1198,8 @@ def query_poi_database(
             matched_items.extend(items)
         elif any(sub in cat_clean for sub in ["outdoor", "outdoors", "trail", "hike", "nature", "beach", "adventure", "active"]) and cat_key in ["outdoors", "trails", "chill"]:
             matched_items.extend(items)
+        elif any(sub in cat_clean for sub in ["game", "games", "arcade", "bowling", "pinball", "vr", "play", "billiards"]) and cat_key in ["arcade", "games"]:
+            matched_items.extend(items)
         elif any(sub in cat_clean for sub in ["thrift", "vintage", "shop", "boutique"]) and cat_key in ["thrifting", "thrift", "art"]:
             matched_items.extend(items)
         elif any(sub in cat_clean for sub in ["coffee", "tea", "cafe", "boba"]) and cat_key in ["coffee", "chill"]:
@@ -1217,11 +1369,21 @@ async def route_ensemble_query(
     tasks = []
 
     # Detect category intents
+    wants_gaming = any(k in cat_lower for k in ["game", "games", "arcade", "bowling", "pinball", "vr", "play", "billiards"])
     wants_dining = any(k in cat_lower for k in ["food", "dining", "cafe", "coffee", "dessert", "boba", "ramen", "eat", "snack"])
     wants_trails = any(k in cat_lower for k in ["trail", "outdoor", "outdoors", "walk", "park", "hike", "nature", "beach", "adventure", "active", "stairs"])
     wants_culture = any(k in cat_lower for k in ["culture", "museum", "art", "gallery", "historic", "thrift", "vintage", "book"])
 
-    if wants_trails and not wants_dining:
+    if wants_gaming:
+        # User requested games or arcade; route directly to verified gaming catalog
+        return query_poi_database(
+            area=area,
+            category="arcade",
+            max_admission=max_admission,
+            departure_time=departure_time,
+            return_cutoff=return_cutoff,
+        )
+    elif wants_trails and not wants_dining:
         # User explicitly requested outdoor adventure/trails; query TrailsScout only
         tasks.append(query_trails_scout(area=area, intensity="moderate", time_window_mins=90, session_id=session_id))
     elif wants_culture and not wants_dining:

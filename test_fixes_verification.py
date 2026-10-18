@@ -209,7 +209,49 @@ def test_paper_ui_review_summary():
             assert len(s.reviewSummary) > 20, f"reviewSummary is empty or too short for stop {s.name}"
             assert any(word in s.reviewSummary.lower() for word in ["visitors", "reviewers", "guests", "patrons", "customers", "praise", "highlight", "rave"]), f"reviewSummary does not follow consensus format: {s.reviewSummary}"
 
-    print("\n>>> TEST 4 PASSED SUCCESSFULLY! <<<\n")
+def test_games_arcade_category():
+    print("=" * 60)
+    print("TEST 5: Games / Arcade Category Candidates & Review Summaries")
+    print("=" * 60)
+    frontend_req = FrontendQuestRequest(
+        category="games",
+        startTime="2026-10-18T14:00:00Z",
+        endTime="2026-10-18T17:30:00Z",
+        budgetPerPerson=45.0,
+        maxDistanceMiles=10.0,
+        location=FrontendLocation(lat=34.0195, lng=-118.4912, label="Santa Monica"),
+    )
+    constraints = adapt_frontend_request_to_constraints(frontend_req)
+    assert constraints.vibe == "arcade", f"Expected vibe 'arcade', got '{constraints.vibe}'"
+
+    cand, chosen_transit, all_transits, meal_res, all_cands = asyncio.run(run_multiagent_pipeline(constraints))
+    response = adapt_pipeline_to_frontend_response(
+        constraints=constraints,
+        candidate=cand,
+        chosen_transit=chosen_transit,
+        all_transit_options=all_transits,
+        meal_res=meal_res,
+        req=frontend_req,
+        all_candidates=all_cands,
+    )
+    print(f"Generated {len(response.quests)} quests for Games/Arcade category:")
+    for q_idx, q in enumerate(response.quests):
+        print(f"\nQuest #{q_idx+1}: {q.title} (${q.totalCostPerPerson}, {q.totalDurationMinutes} mins, {len(q.stops)} stops)")
+        print(f"  Tagline: {q.tagline}")
+        primary_stops = [s for s in q.stops if s.order == 1]
+        for s in q.stops:
+            print(f"  Stop #{s.order}: {s.name} ({s.category}) | Rating: {s.rating}")
+            print(f"    AI Review Summary: {s.reviewSummary}")
+            assert s.reviewSummary, f"Stop {s.name} missing reviewSummary"
+
+        # Verify that Stop 1 is a gaming/arcade venue, NOT a hiking trail or park
+        stop1 = q.stops[0]
+        cat_lower = (stop1.category or "").lower()
+        name_lower = stop1.name.lower()
+        is_game_venue = any(k in cat_lower or k in name_lower for k in ["arcade", "game", "midway", "carnival", "pinball", "bowling", "playland", "entertainment"])
+        assert is_game_venue, f"Quest #{q_idx+1} Stop 1 should be an arcade/game venue, got: {stop1.name} ({stop1.category})"
+
+    print("\n>>> TEST 5 (GAMES / ARCADE) PASSED SUCCESSFULLY! <<<\n")
 
 
 if __name__ == "__main__":
@@ -217,6 +259,8 @@ if __name__ == "__main__":
     test_business_closures()
     test_dns_and_dispenser()
     test_paper_ui_review_summary()
+    test_games_arcade_category()
     print("=" * 60)
-    print("🎉 ALL 4 TEST SUITES PASSED FLAWLESSLY!")
+    print("🎉 ALL 5 TEST SUITES PASSED FLAWLESSLY!")
     print("=" * 60)
+

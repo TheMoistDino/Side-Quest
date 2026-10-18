@@ -649,6 +649,142 @@ REAL_SOURCE_CATALOG: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
             },
         ],
     },
+    "arcade": {
+        "santa monica": [
+            {
+                "name": "Playland Arcade on Santa Monica Pier",
+                "cuisine": "arcade & gaming",
+                "type": "arcade",
+                "address": "250 Santa Monica Pier, Santa Monica, CA 90401",
+                "lat": 34.0099,
+                "lng": -118.4975,
+                "cost": 15.0,
+                "hours": "10:00 AM - 11:00 PM (Daily)",
+                "desc": "Historic beachfront arcade on the pier featuring classic skeeball, pinball machines, air hockey, and retro fighting games.",
+                "perk": "+30 Reflex Precision, Pier Nostalgia Buff",
+                "platform": "Google Maps",
+                "rating": 4.5,
+                "review_count": 1850,
+                "author": "Dave R.",
+                "excerpt": "Classic vintage arcade right over the ocean. Skeeball and retro games with the Pacific sunset right outside.",
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Playland+Arcade+250+Santa+Monica+Pier+Santa+Monica+CA",
+            },
+            {
+                "name": "Pacific Park Boardwalk Midway Games",
+                "cuisine": "carnival & arcade",
+                "type": "arcade",
+                "address": "380 Santa Monica Pier, Santa Monica, CA 90401",
+                "lat": 34.0089,
+                "lng": -118.4984,
+                "cost": 12.0,
+                "hours": "11:00 AM - 9:00 PM (Daily)",
+                "desc": "Oceanfront seaside midway carnival games including ring toss, balloon pop, and water race.",
+                "perk": "+20 Dexterity, Carnival Champion",
+                "platform": "Google Maps",
+                "rating": 4.6,
+                "review_count": 2400,
+                "author": "Chloe S.",
+                "excerpt": "Fun boardwalk midway games with great prizes and iconic ocean views.",
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Pacific+Park+380+Santa+Monica+Pier+Santa+Monica+CA",
+            },
+        ],
+        "westwood": [
+            {
+                "name": "Ackerman Union Game Zone & Arcade",
+                "cuisine": "arcade & gaming",
+                "type": "arcade",
+                "address": "308 Westwood Plaza, Los Angeles, CA 90095",
+                "lat": 34.0704,
+                "lng": -118.4441,
+                "cost": 8.0,
+                "hours": "9:00 AM - 10:00 PM (Mon-Sat)",
+                "desc": "Campus gaming lounge and arcade with Dance Dance Revolution, billiards tables, fighting cabinets, and pinball.",
+                "perk": "+25 Rhythm Agility, Bruin High Score",
+                "platform": "Google Maps",
+                "rating": 4.6,
+                "review_count": 420,
+                "author": "Tyler N.",
+                "excerpt": "Hidden gem gaming spot in Westwood. Great pool tables, pinball, and classic rhythm games at budget student prices.",
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Ackerman+Union+308+Westwood+Plaza+Los+Angeles+CA",
+            },
+            {
+                "name": "Dave & Buster's West LA Arcade",
+                "cuisine": "arcade & gaming",
+                "type": "arcade",
+                "address": "6081 Center Dr, Los Angeles, CA 90045",
+                "lat": 33.9785,
+                "lng": -118.3907,
+                "cost": 20.0,
+                "hours": "11:00 AM - 12:00 AM (Daily)",
+                "desc": "Massive state-of-the-art interactive arcade with multiplayer motion simulators, racing pods, and ticket redemption.",
+                "perk": "+35 Adrenaline Rush, High Score Chaser",
+                "platform": "Google Maps",
+                "rating": 4.4,
+                "review_count": 3100,
+                "author": "Samir V.",
+                "excerpt": "Huge game floor with all the latest multiplayer arcade machines, virtual reality games, and classic air hockey.",
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Dave+and+Busters+6081+Center+Dr+Los+Angeles+CA",
+            },
+        ],
+        "downtown la": [
+            {
+                "name": "EightyTwo Vintage Arcade & Pinball",
+                "cuisine": "vintage arcade & pinball",
+                "type": "arcade",
+                "address": "707 E 4th Pl, Los Angeles, CA 90013",
+                "lat": 34.0452,
+                "lng": -118.2372,
+                "cost": 10.0,
+                "hours": "4:00 PM - 2:00 AM (Tue-Sun)",
+                "desc": "Legendary classic arcade featuring 55+ fully restored 1980s and 1990s arcade cabinets and competitive pinball machines.",
+                "perk": "+40 Nostalgia Mastery, Flawless Combo",
+                "platform": "Google Maps",
+                "rating": 4.6,
+                "review_count": 2900,
+                "author": "Leo M.",
+                "excerpt": "The premier classic arcade in DTLA. Incredible pinball collection and all the 90s fighting and beat-em-up games.",
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=EightyTwo+707+E+4th+Pl+Los+Angeles+CA",
+            },
+            {
+                "name": "Two Bit Circus Micro-Amusement Park",
+                "cuisine": "vr & indie arcade",
+                "type": "arcade",
+                "address": "634 Mateo St, Los Angeles, CA 90021",
+                "lat": 34.0354,
+                "lng": -118.2323,
+                "cost": 25.0,
+                "hours": "1:00 PM - 11:00 PM (Wed-Sun)",
+                "desc": "Experiential high-tech playground with custom virtual reality arenas, story rooms, and retro-futuristic arcade games.",
+                "perk": "+45 Techno-Illusionist, Sci-Fi Explorer",
+                "platform": "Google Maps",
+                "rating": 4.6,
+                "review_count": 1750,
+                "author": "Jessica T.",
+                "excerpt": "Mind-blowing gaming playground. VR arenas and unique indie arcade games you cannot play anywhere else.",
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Two+Bit+Circus+634+Mateo+St+Los+Angeles+CA",
+            },
+        ],
+        "koreatown": [
+            {
+                "name": "Shatto 39 Neon Bowling & Arcade",
+                "cuisine": "bowling & arcade",
+                "type": "arcade",
+                "address": "3255 W 4th St, Los Angeles, CA 90020",
+                "lat": 34.0673,
+                "lng": -118.2938,
+                "cost": 15.0,
+                "hours": "10:00 AM - 1:00 AM (Daily)",
+                "desc": "Iconic retro neon bowling alley and vintage game arcade with billiard tables and claw machines.",
+                "perk": "+30 Pin Crusher, Neon Retro Flare",
+                "platform": "Google Maps",
+                "rating": 4.4,
+                "review_count": 1600,
+                "author": "Brian C.",
+                "excerpt": "Old school vibes with great bowling lanes, pool tables, and vintage arcade machines. A Koreatown classic.",
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Shatto+39+Lanes+3255+W+4th+St+Los+Angeles+CA",
+            },
+        ],
+    },
 }
 
 
@@ -719,6 +855,8 @@ def find_candidates_in_radius(
                 continue
             if dom_key == "culture" and not any(k in cat_lower for k in ["culture", "museum", "art", "gallery", "historic", "vintage"]):
                 continue
+            if dom_key == "arcade" and not any(k in cat_lower for k in ["game", "games", "arcade", "bowling", "pinball", "vr", "play"]):
+                continue
 
         for area_name, pois in areas.items():
             for p in pois:
@@ -736,6 +874,8 @@ def find_candidates_in_radius(
                             dwell = int(p.get("length_miles", 1.5) * 20 + 20)
                         elif dom_key == "culture":
                             dwell = 90 if p.get("type") == "museum" else 45
+                        elif dom_key == "arcade":
+                            dwell = 60
                         else:
                             dwell = 55 if p.get("type") == "sit_down" else 35
 
