@@ -1,13 +1,14 @@
 """
-agent.py: Quest Orchestrator Agent (Primary Dispatcher).
+agent.py: Quest Orchestrator Agent (Primary Dispatcher & Dual Gateway).
 
 Coordinates three specialized subagents running in a unified Bureau:
 1. Scout Agent (scout_agent.py): POI discovery & dwell estimation
 2. Transit & Mobility Agent (transit_agent.py): Multi-modal routing & fares
 3. Budget & Meal Agent (budget_agent.py): Opportunistic culinary checkpoints
 
-Maintains external registration on port 8000 with public ngrok /submit endpoint
-compliant with Fetch.ai Agent Chat Protocol (ACP) for ASI:One (asi1.ai).
+Supports two frontends simultaneously:
+1. Custom Web/App Frontend: REST JSON endpoints (POST /api/quest and POST /api/quest/plan)
+2. Fetch.ai ASI:One Interface: Agent Chat Protocol (ACP) over /submit webhook
 """
 
 import os
@@ -16,7 +17,7 @@ import uuid
 import time
 import asyncio
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -28,6 +29,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from uagents import Agent, Context, Protocol
+from uagents.asgi import ASGIServer
 from uagents_core.contrib.protocols.chat import (
     ChatAcknowledgement,
     ChatMessage,
@@ -47,16 +49,42 @@ from schemas import (
 )
 
 from planner import (
+    QuestConstraints,
     extract_constraints,
     synthesize_quest,
     render_rpg_log,
     render_multiagent_rpg_log,
-    QuestConstraints,
 )
 
-from scout_agent import scout_agent
-from transit_agent import transit_agent
-from budget_agent import budget_agent
+from scout_agent import scout_agent, query_poi_database, search_live_pois, verify_and_ground_candidates
+from transit_agent import transit_agent, calculate_multi_modal_options
+from budget_agent import budget_agent, SIT_DOWN_OPTIONS, SNACK_OPTIONS
+
+from adapters import (
+    FrontendQuestRequest,
+    FrontendQuestResponse,
+    adapt_frontend_request_to_constraints,
+    adapt_acp_message_to_constraints,
+    adapt_pipeline_to_frontend_response,
+    adapt_pipeline_to_acp_response,
+)
+
+# Apply global CORS wrapper to ASGIServer so browser requests from Next.js (port 3000) succeed
+_original_asgi_send = ASGIServer._asgi_send
+
+async def _cors_asgi_send(self, send, status_code=200, headers=None, body=None):
+    if headers is None:
+        headers = {}
+    if "Content-Type" not in headers and "content-type" not in headers and body is not None:
+        headers["Content-Type"] = "application/json"
+    headers["Access-Control-Allow-Origin"] = "*"
+    headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, HEAD"
+    headers["Access-Control-Allow-Headers"] = "*"
+    headers["Access-Control-Max-Age"] = "86400"
+    return await _original_asgi_send(self, send, status_code=status_code, headers=headers, body=body)
+
+ASGIServer._asgi_send = _cors_asgi_send
+
 
 # Configuration
 PORT = int(os.getenv("PORT", "8000"))
@@ -106,6 +134,7 @@ budget_agent._resolver = SmartResolver(budget_agent._resolver)
 # Instantiate Fetch.ai Agent Chat Protocol specification
 chat_proto = Protocol(spec=chat_protocol_spec)
 
+
 # Session tracking for multi-agent delegation pipeline
 class QuestSession:
     def __init__(self, session_id: str, user_sender: str, constraints: QuestConstraints):
@@ -114,7 +143,8 @@ class QuestSession:
         self.constraints = constraints
         self.start_time = datetime.now()
         self.candidate: Optional[QuestCandidate] = None
-        self.transit_options: list[TransitOption] = []
+        self.all_candidates: List[QuestCandidate] = []
+        self.transit_options: List[TransitOption] = []
         self.chosen_transit: Optional[TransitOption] = None
         self.meal_result: Optional[MealResult] = None
         self.pipeline_complete = asyncio.Event()
@@ -126,24 +156,220 @@ active_sessions: Dict[str, QuestSession] = {}
 @agent.on_event("startup")
 async def startup_handler(ctx: Context):
     ctx.logger.info("=" * 65)
-    ctx.logger.info(f"🎮 {AGENT_NAME} ONLINE (Multi-Agent Bureau Active)")
+    ctx.logger.info(f"🎮 {AGENT_NAME} ONLINE (Dual Gateway Multi-Agent Active)")
     ctx.logger.info(f"📌 Orchestrator Address : {agent.address}")
     ctx.logger.info(f"🔭 Scout Agent Address  : {scout_agent.address}")
     ctx.logger.info(f"🚦 Transit Agent Address: {transit_agent.address}")
     ctx.logger.info(f"🍔 Budget Agent Address : {budget_agent.address}")
-    ctx.logger.info(f"🌐 Public Webhook       : {AGENT_ENDPOINT}")
+    ctx.logger.info(f"🌐 Public Webhook (ACP) : {AGENT_ENDPOINT}")
     ctx.logger.info(f"🔌 Local Port           : {PORT}")
+    ctx.logger.info(f"🚀 REST Routes          : POST /api/quest, POST /api/quest/plan")
     ctx.logger.info(f"💬 Protocol             : Fetch.ai Agent Chat Protocol (ACP)")
-    ctx.logger.info("Ready for ASI:One multi-agent sidequest delegation!")
+    ctx.logger.info("Ready for dual-frontend sidequest orchestration!")
     ctx.logger.info("=" * 65)
 
 
 # ==============================================================================
-# ASI:One Chat Message Handling & Multi-Agent Orchestration
+# Shared Multi-Agent Pipeline Runner
+# ==============================================================================
+
+async def run_multiagent_pipeline(
+    constraints: QuestConstraints,
+    ctx: Optional[Context] = None,
+) -> Tuple[QuestCandidate, TransitOption, List[TransitOption], Optional[MealResult], List[QuestCandidate]]:
+    """
+    Core orchestration pipeline shared by both the Custom Frontend (REST)
+    and the ASI:One (ACP) entry points.
+    
+    1. Executes inter-agent RPC via ctx.send if available inside the Bureau.
+    2. Employs resilient fallback to deterministic subagent worker calls upon timeout.
+    """
+    session_id = str(uuid.uuid4())[:8]
+    session = QuestSession(session_id=session_id, user_sender="orchestrator", constraints=constraints)
+    active_sessions[session_id] = session
+
+    pipeline_succeeded = False
+
+    if ctx is not None:
+        try:
+            # Query Scout Agent with grounded constraints
+            scout_query = ScoutQuery(
+                session_id=session_id,
+                query_area=constraints.origin,
+                category=constraints.vibe,
+                max_admission=constraints.budget_usd,
+                departure_time=getattr(constraints, "departure_time", None),
+                return_cutoff=getattr(constraints, "return_cutoff", None),
+            )
+            await ctx.send(scout_agent.address, scout_query)
+
+            # Await full inter-agent pipeline resolution with extended async buffer (35s)
+            await asyncio.wait_for(session.pipeline_complete.wait(), timeout=35.0)
+            if session.candidate and session.chosen_transit:
+                pipeline_succeeded = True
+        except Exception as err:
+            if ctx and hasattr(ctx, "logger"):
+                ctx.logger.info(f"Notice: inter-agent dispatch fallback: {err}. Executing subagent workers directly.")
+
+    # Resilient subagent worker execution if network wait timed out or direct execution
+    if not pipeline_succeeded or session.candidate is None:
+        # Step 1: Scout Subagent Worker with live HTTP validation & dwell bounding
+        candidates = search_live_pois(constraints.origin, constraints.vibe, constraints.budget_usd)
+        if not candidates:
+            candidates = query_poi_database(
+                area=constraints.origin,
+                category=constraints.vibe,
+                max_admission=constraints.budget_usd,
+                departure_time=getattr(constraints, "departure_time", None),
+                return_cutoff=getattr(constraints, "return_cutoff", None),
+            )
+
+        candidates = await verify_and_ground_candidates(
+            candidates,
+            departure_time=getattr(constraints, "departure_time", None),
+            return_cutoff=getattr(constraints, "return_cutoff", None),
+        )
+
+        session.all_candidates = candidates
+        candidate = candidates[0] if candidates else QuestCandidate(
+            id="default-poi",
+            name=f"Historic Walk around {constraints.origin}",
+            lat=34.0689,
+            lng=-118.4452,
+            estimated_admission=0.0,
+            estimated_dwell_minutes=45,
+            opening_hours="Open 24/7",
+            description=f"Scenic walking exploration of {constraints.origin}.",
+            perk="+15 Exploration Wisdom",
+            address=f"Central Plaza, {constraints.origin}, CA",
+            category="Walking Tour",
+            rating=4.7,
+            review_count=350,
+            review_summary=f"Scenic walking route charting architectural gems in {constraints.origin}.",
+        )
+        session.candidate = candidate
+
+        # Step 2: Transit Subagent Worker
+        transit_options, recommended_mode = calculate_multi_modal_options(
+            origin_str=constraints.origin,
+            dest_lat=candidate.lat,
+            dest_lng=candidate.lng,
+        )
+        session.transit_options = transit_options
+        session.chosen_transit = next((opt for opt in transit_options if opt.mode == recommended_mode), transit_options[0])
+
+        # Step 3: Budget Subagent Worker (Feasibility & Slack)
+        roundtrip_transit = 2 * session.chosen_transit.duration_minutes
+        primary_dwell = candidate.estimated_dwell_minutes
+        transit_cost = session.chosen_transit.estimated_cost
+        roundtrip_transit_cost = 2 * transit_cost if session.chosen_transit.mode != "driving" else transit_cost
+        admission_cost = candidate.estimated_admission
+
+        time_used = roundtrip_transit + primary_dwell
+        slack_time = max(0, constraints.duration_minutes - time_used)
+        remaining_budget = max(0.0, constraints.budget_usd - (roundtrip_transit_cost + admission_cost))
+
+        if slack_time >= 45 and remaining_budget >= 15.0:
+            dining_candidates = [s for s in SIT_DOWN_OPTIONS if s["cost"] <= remaining_budget and s["dwell"] <= (slack_time - 10)]
+            chosen_meal = dining_candidates[0] if dining_candidates else SIT_DOWN_OPTIONS[0]
+            session.meal_result = MealResult(
+                session_id=session_id,
+                recommended=True,
+                spot_name=chosen_meal["name"],
+                estimated_cost=chosen_meal["cost"],
+                dwell_mins=chosen_meal["dwell"],
+                reasoning=f"Optimal slack ({slack_time}m) allows sit-down culinary checkpoint: {chosen_meal['reasoning']}",
+                perk=chosen_meal["perk"],
+            )
+        elif slack_time >= 20 and remaining_budget >= 4.50:
+            snack_candidates = [s for s in SNACK_OPTIONS if s["cost"] <= remaining_budget and s["dwell"] <= (slack_time - 5)]
+            chosen_snack = snack_candidates[0] if snack_candidates else SNACK_OPTIONS[0]
+            session.meal_result = MealResult(
+                session_id=session_id,
+                recommended=True,
+                spot_name=chosen_snack["name"],
+                estimated_cost=chosen_snack["cost"],
+                dwell_mins=chosen_snack["dwell"],
+                reasoning=f"Tactical slack ({slack_time}m) allows quick supply drop: {chosen_snack['reasoning']}",
+                perk=chosen_snack["perk"],
+            )
+        else:
+            session.meal_result = MealResult(
+                session_id=session_id,
+                recommended=False,
+                spot_name=None,
+                estimated_cost=0.0,
+                dwell_mins=0,
+                reasoning="Schedule or funds are tightly allocated; preserving return deadline.",
+                perk=None,
+            )
+
+    active_sessions.pop(session_id, None)
+    return (
+        session.candidate,
+        session.chosen_transit,
+        session.transit_options,
+        session.meal_result,
+        session.all_candidates,
+    )
+
+
+# ==============================================================================
+# REST HTTP Endpoints for Custom Web/App Frontend
+# ==============================================================================
+
+@agent.on_rest_post("/api/quest", FrontendQuestRequest, FrontendQuestResponse)
+async def handle_rest_quest(ctx: Context, req: FrontendQuestRequest) -> FrontendQuestResponse:
+    """
+    Primary REST endpoint matching the Next.js frontend's target in lib/api.ts.
+    Receives QuestRequest JSON, runs through multi-agent orchestration,
+    and returns exact QuestResponse JSON.
+    """
+    b_val = req.budgetPerPerson if isinstance(req.budgetPerPerson, (int, float)) else 35.0
+    p_val = req.groupSize if isinstance(req.groupSize, int) else 1
+    loc_val = f"({req.location.lat:.4f}, {req.location.lng:.4f})" if (req.location and isinstance(req.location.lat, (int, float))) else "default"
+    ctx.logger.info(
+        f"🌐 [REST /api/quest] Ingestion: Category='{req.category}', "
+        f"Budget=${b_val:.2f}, Party={p_val}, Location={loc_val}"
+    )
+
+    # 1. Path A: Ingest and normalize frontend payload
+    constraints = adapt_frontend_request_to_constraints(req)
+
+    # 2. Execute multi-agent orchestration
+    cand, chosen_transit, all_transits, meal_res, all_cands = await run_multiagent_pipeline(constraints, ctx)
+
+    # 3. Format into exact FrontendQuestResponse model
+    response = adapt_pipeline_to_frontend_response(
+        constraints=constraints,
+        candidate=cand,
+        chosen_transit=chosen_transit,
+        all_transit_options=all_transits,
+        meal_res=meal_res,
+        req=req,
+        all_candidates=all_cands,
+    )
+
+    ctx.logger.info(f"✨ [REST /api/quest] Successfully generated {len(response.quests)} curated quests for frontend.")
+    return response
+
+
+@agent.on_rest_post("/api/quest/plan", FrontendQuestRequest, FrontendQuestResponse)
+async def handle_rest_quest_plan(ctx: Context, req: FrontendQuestRequest) -> FrontendQuestResponse:
+    """Convenience alias route for POST /api/quest/plan."""
+    ctx.logger.info("🌐 [REST /api/quest/plan] Alias route invoked.")
+    return await handle_rest_quest(ctx, req)
+
+
+# ==============================================================================
+# ASI:One Chat Message Handling (Agent Chat Protocol via /submit)
 # ==============================================================================
 
 @chat_proto.on_message(ChatMessage)
 async def handle_chat_message(ctx: Context, sender: str, msg: ChatMessage):
+    """
+    Handles incoming conversational messages from Fetch.ai ASI:One via ACP.
+    """
     ctx.logger.info(f"📨 Incoming ChatMessage from {sender} (msg_id: {msg.msg_id})")
 
     # 1. Immediate ACP Delivery Acknowledgement
@@ -171,51 +397,22 @@ async def handle_chat_message(ctx: Context, sender: str, msg: ChatMessage):
     if not incoming_query:
         incoming_query = "2 hours free, $30 budget near Westwood for art or chill"
 
-    ctx.logger.info(f"🔍 Analyzing user request: '{incoming_query}'")
+    ctx.logger.info(f"🔍 Analyzing ASI:One query: '{incoming_query}'")
 
-    # 3. Parse constraints
-    constraints = extract_constraints(incoming_query)
-    session_id = str(uuid.uuid4())[:8]
-    session = QuestSession(session_id=session_id, user_sender=sender, constraints=constraints)
-    active_sessions[session_id] = session
+    # 3. Path B: Ingest via adapter
+    constraints = adapt_acp_message_to_constraints(incoming_query)
 
-    ctx.logger.info(
-        f"🚀 Initiating Multi-Agent Pipeline [Session {session_id}]: "
-        f"Area='{constraints.origin}', Category='{constraints.vibe}', "
-        f"Duration={constraints.duration_minutes}m, Budget=${constraints.budget_usd:.2f}"
+    # 4. Execute shared multi-agent orchestration
+    cand, chosen_transit, all_transits, meal_res, _ = await run_multiagent_pipeline(constraints, ctx)
+
+    # 5. Format ACP response (Markdown Log & Interactive Card)
+    response_text, _ = adapt_pipeline_to_acp_response(
+        constraints=constraints,
+        candidate=cand,
+        chosen_transit=chosen_transit,
+        all_transit_options=all_transits,
+        meal_res=meal_res,
     )
-
-    # 4. Step 1: Query Scout Agent
-    scout_query = ScoutQuery(
-        session_id=session_id,
-        query_area=constraints.origin,
-        category=constraints.vibe,
-        max_admission=constraints.budget_usd,
-    )
-    await ctx.send(scout_agent.address, scout_query)
-
-    # 5. Await pipeline completion with resilient timeout fallback
-    try:
-        await asyncio.wait_for(session.pipeline_complete.wait(), timeout=6.0)
-        # Synthesize final itinerary using multi-agent output
-        response_text = render_multiagent_rpg_log(
-            constraints=session.constraints,
-            candidate=session.candidate,
-            chosen_transit=session.chosen_transit,
-            all_transit_options=session.transit_options,
-            meal_res=session.meal_result,
-        )
-        ctx.logger.info(f"✨ Multi-agent pipeline succeeded for session {session_id}!")
-    except asyncio.TimeoutError:
-        ctx.logger.warning(f"⚠️ Multi-agent pipeline timed out for session {session_id}. Employing deterministic fallback.")
-        plan = synthesize_quest(constraints)
-        response_text = render_rpg_log(plan)
-    except Exception as err:
-        ctx.logger.error(f"Error in multi-agent pipeline: {err}", exc_info=True)
-        plan = synthesize_quest(constraints)
-        response_text = render_rpg_log(plan)
-    finally:
-        active_sessions.pop(session_id, None)
 
     # 6. Dispatch ACP ChatMessage response back to user
     try:
@@ -232,7 +429,7 @@ async def handle_acknowledgement(ctx: Context, sender: str, msg: ChatAcknowledge
 
 
 # ==============================================================================
-# Inter-Agent RPC Handlers (Orchestrator Pipeline)
+# Inter-Agent RPC Handlers (Orchestrator Pipeline inside Bureau)
 # ==============================================================================
 
 orchestrator_proto = Protocol(name="OrchestratorPipelineProtocol", version="1.0.0")
@@ -245,7 +442,8 @@ async def handle_scout_result(ctx: Context, sender: str, msg: ScoutResult):
         return
 
     ctx.logger.info(f"🔭 [Step 1 Received] ScoutAgent returned {len(msg.candidates)} candidates for session {msg.session_id}")
-    
+    session.all_candidates = msg.candidates
+
     # Pick top candidate
     candidate = msg.candidates[0] if msg.candidates else QuestCandidate(
         id="default-poi",
@@ -257,6 +455,8 @@ async def handle_scout_result(ctx: Context, sender: str, msg: ScoutResult):
         opening_hours="Open 24/7",
         description=f"Scenic walking exploration of {session.constraints.origin}.",
         perk="+15 Exploration Wisdom",
+        address=f"Central Plaza, {session.constraints.origin}, CA",
+        category="Walking Tour",
     )
     session.candidate = candidate
 
@@ -286,7 +486,6 @@ async def handle_transit_result(ctx: Context, sender: str, msg: TransitResult):
     session.chosen_transit = chosen
 
     # Compute resource slack:
-    # Round-trip transit: 2 * duration
     roundtrip_transit = 2 * chosen.duration_minutes
     primary_dwell = session.candidate.estimated_dwell_minutes if session.candidate else 45
     transit_cost = chosen.estimated_cost
@@ -322,7 +521,7 @@ async def handle_meal_result(ctx: Context, sender: str, msg: MealResult):
     ctx.logger.info(f"🍔 [Step 3 Received] BudgetAgent evaluated meal: recommended={msg.recommended} ({msg.spot_name})")
     session.meal_result = msg
 
-    # Mark pipeline as complete to awaken the handle_chat_message coroutine
+    # Mark pipeline as complete to awaken the waiting coroutine
     session.pipeline_complete.set()
 
 

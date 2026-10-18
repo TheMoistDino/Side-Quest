@@ -26,6 +26,9 @@ from uagents import Bureau
 # Import all agents
 from agent import agent as orchestrator_agent
 from scout_agent import scout_agent
+from dining_scout import dining_scout
+from trails_scout import trails_scout
+from culture_scout import culture_scout
 from transit_agent import transit_agent
 from budget_agent import budget_agent
 
@@ -35,15 +38,20 @@ AGENT_ENDPOINT = os.getenv("AGENT_ENDPOINT", "https://liqueur-customize-nearby.n
 
 def main():
     print("=" * 70)
-    print(" 🚀 Launching Quest Orchestrator Multi-Agent Bureau")
+    print(" 🚀 Launching Quest Orchestrator Multi-Agent Bureau (Ensemble Active)")
     print("=" * 70)
     print(f"Server Port      : {PORT}")
     print(f"Public Webhook   : {AGENT_ENDPOINT}")
+    print(f"REST Gateway     : http://127.0.0.1:{PORT}/api/quest (and /api/quest/plan)")
+    print(f"ACP Webhook      : http://127.0.0.1:{PORT}/submit")
     print(f"Managed Agents   : ")
-    print(f"  1. [Orchestrator] {orchestrator_agent.name} ({orchestrator_agent.address})")
-    print(f"  2. [Scout]        {scout_agent.name} ({scout_agent.address})")
-    print(f"  3. [Transit]      {transit_agent.name} ({transit_agent.address})")
-    print(f"  4. [Budget]       {budget_agent.name} ({budget_agent.address})")
+    print(f"  1. [Orchestrator]   {orchestrator_agent.name} ({orchestrator_agent.address})")
+    print(f"  2. [Scout Ensemble] {scout_agent.name} ({scout_agent.address})")
+    print(f"     ↳ [Dining]      {dining_scout.name} ({dining_scout.address})")
+    print(f"     ↳ [Trails]      {trails_scout.name} ({trails_scout.address})")
+    print(f"     ↳ [Culture]     {culture_scout.name} ({culture_scout.address})")
+    print(f"  3. [Transit]        {transit_agent.name} ({transit_agent.address})")
+    print(f"  4. [Budget]         {budget_agent.name} ({budget_agent.address})")
     print("-" * 70)
 
     # Initialize Bureau on port 8000
@@ -55,10 +63,13 @@ def main():
     # Register all agents into the Bureau
     bureau.add(orchestrator_agent)
     bureau.add(scout_agent)
+    bureau.add(dining_scout)
+    bureau.add(trails_scout)
+    bureau.add(culture_scout)
     bureau.add(transit_agent)
     bureau.add(budget_agent)
 
-    print("All agents attached to Bureau. Starting event loops and listeners...")
+    print("All ensemble agents attached to Bureau. Starting event loops and listeners...")
     bureau.run()
 
 
