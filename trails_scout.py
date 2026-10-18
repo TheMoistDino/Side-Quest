@@ -29,7 +29,7 @@ from tools.browser_tools import (
     REAL_SOURCE_CATALOG,
     ground_and_validate_candidates,
     google_place_candidates,
-    in_los_angeles,
+    search_text,
     within_radius,
     make_deterministic_maps_url,
 )
@@ -65,7 +65,7 @@ async def query_trails_scout(
 
     # 1. Live Google Places (when GOOGLE_MAPS_API_KEY is set); the curated catalog below is the fallback.
     live = await google_place_candidates(
-        f"hiking trails and parks near {in_los_angeles(area)}",
+        search_text("hiking trails and parks", area, center),
         scout_name="Trails Scout",
         category_fallback="Park",
         dwell_for=lambda _type: 60,

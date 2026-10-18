@@ -30,7 +30,7 @@ from tools.browser_tools import (
     REAL_SOURCE_CATALOG,
     ground_and_validate_candidates,
     google_place_candidates,
-    in_los_angeles,
+    search_text,
     within_radius,
     make_deterministic_maps_url,
 )
@@ -69,7 +69,7 @@ async def query_culture_scout(
 
     # 1. Live Google Places (when GOOGLE_MAPS_API_KEY is set); the curated catalog below is the fallback.
     live = await google_place_candidates(
-        f"{exhibition_type or 'museums and art galleries'} in {in_los_angeles(area)}",
+        search_text(exhibition_type or "museums and art galleries", area, center),
         scout_name="Culture Scout",
         category_fallback="Museum",
         dwell_for=bound_culture_dwell,

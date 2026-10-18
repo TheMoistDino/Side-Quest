@@ -18,6 +18,7 @@ import os
 import sys
 import re
 import uuid
+import random
 import asyncio
 import urllib.parse
 from datetime import datetime
@@ -1137,6 +1138,7 @@ async def route_ensemble_query(
     aggregated: List[QuestCandidate] = []
     for sub_list in results:
         aggregated.extend(sub_list)
+    random.shuffle(aggregated)  # mix scouts' picks so quest order varies between identical searches
 
     if not aggregated:
         # Resilient fallback to local catalog

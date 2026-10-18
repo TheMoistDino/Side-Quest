@@ -12,6 +12,7 @@ Provides:
 import os
 import re
 import math
+import random
 import uuid
 import asyncio
 import urllib.parse
@@ -527,6 +528,12 @@ PRICE_LEVEL_ESTIMATE_USD = {
 }
 
 
+def search_text(what: str, area: str, center: Optional[Tuple[float, float]]) -> str:
+    """With an exact start + radius, search the whole area ("restaurants"); otherwise anchor to the
+    neighborhood name ("restaurants in Westwood, Los Angeles")."""
+    return what if center else f"{what} in {in_los_angeles(area)}"
+
+
 def in_los_angeles(area: str) -> str:
     """'Westwood' -> 'Westwood, Los Angeles'; leaves 'Westwood, Los Angeles' alone."""
     area = (area or "Los Angeles").strip()
@@ -546,28 +553,44 @@ def within_radius(
     center: Optional[Tuple[float, float]],
     radius_miles: Optional[float],
 ) -> List[QuestCandidate]:
-    """Keeps candidates inside the user's max distance (straight line), nearest first."""
+    """Keeps candidates inside the user's max distance (straight line), preserving order."""
     if not center or not radius_miles:
         return candidates
-    scored = sorted(candidates, key=lambda c: haversine_miles(center[0], center[1], c.lat, c.lng))
-    return [c for c in scored if haversine_miles(center[0], center[1], c.lat, c.lng) <= radius_miles]
+    return [c for c in candidates if haversine_miles(center[0], center[1], c.lat, c.lng) <= radius_miles]
 
 
 def price_levels_for_budget(budget_usd: float) -> List[str]:
-    """Google price levels whose per-person estimate fits the budget (at least the cheapest tier)."""
-    levels = [lvl for lvl, est in PRICE_LEVEL_ESTIMATE_USD.items() if lvl != "PRICE_LEVEL_FREE" and est <= budget_usd]
-    return levels or ["PRICE_LEVEL_INEXPENSIVE"]
+    """Google price levels that fit the budget AND use a meaningful share of it (>= 25%), so a big
+    budget means nicer places rather than the same $10 spots. Falls back to the priciest affordable tier."""
+    paid = {lvl: est for lvl, est in PRICE_LEVEL_ESTIMATE_USD.items() if lvl != "PRICE_LEVEL_FREE"}
+    affordable = [lvl for lvl, est in paid.items() if est <= budget_usd]
+    if not affordable:
+        return ["PRICE_LEVEL_INEXPENSIVE"]
+    worth_it = [lvl for lvl in affordable if paid[lvl] >= budget_usd * 0.25]
+    return worth_it or [max(affordable, key=paid.get)]
 
 
 def _places_body(text_query, max_results, center, radius_miles, price_levels, rank_by_distance) -> Dict[str, Any]:
     body: Dict[str, Any] = {"textQuery": text_query, "maxResultCount": max_results}
-    if center:
+    if center and rank_by_distance:
+        # "Closest first" (meal stops): bias toward the point and rank by distance.
         meters = min(50000.0, max(500.0, (radius_miles or 5.0) * 1609.34))  # API caps the circle at 50 km
         body["locationBias"] = {
             "circle": {"center": {"latitude": center[0], "longitude": center[1]}, "radius": meters}
         }
-        if rank_by_distance:
-            body["rankPreference"] = "DISTANCE"
+        body["rankPreference"] = "DISTANCE"
+    elif center:
+        # Whole search area: restrict to the box around the radius so results come from anywhere
+        # inside it, ranked by relevance (callers drop the box corners with within_radius).
+        r = radius_miles or 5.0
+        dlat = r / 69.0
+        dlng = r / (69.0 * max(0.2, math.cos(math.radians(center[0]))))
+        body["locationRestriction"] = {
+            "rectangle": {
+                "low": {"latitude": center[0] - dlat, "longitude": center[1] - dlng},
+                "high": {"latitude": center[0] + dlat, "longitude": center[1] + dlng},
+            }
+        }
     if price_levels:
         body["priceLevels"] = price_levels
     return body
@@ -681,7 +704,7 @@ async def google_place_candidates(
     dwell_for,
     unknown_cost: float,
     perk: str,
-    max_results: int = 6,
+    max_results: int = 20,
     center: Optional[Tuple[float, float]] = None,
     radius_miles: Optional[float] = None,
     price_levels: Optional[List[str]] = None,
@@ -706,6 +729,12 @@ async def google_place_candidates(
     )
     if places and radius_miles and center:
         status += f", {len(candidates)} within {radius_miles:g} mi"
+    # Variety: drop weak places when there are enough good ones, then shuffle so the same search
+    # draws a different mix each time (the orchestrator builds quests from the front of the list).
+    good = [c for c in candidates if c.rating >= 4.2 and c.review_count >= 30]
+    if len(good) >= 3:
+        candidates = good
+    random.shuffle(candidates)
     source = "using live results" if candidates else "falling back to catalog"
     print(f"INFO:     [{scout_name}]: 📍 Google Places '{text_query}' -> {status}; {source}", flush=True)
     return candidates
@@ -743,6 +772,8 @@ async def google_meal_near(
     ]
     # Best-rated nearby spots with a meaningful number of ratings, so picks vary with location instead of a fixed list.
     options.sort(key=lambda o: (o.review_count >= 50, o.rating), reverse=True)
+    options = options[:5]
+    random.shuffle(options)  # a different good spot each reload, not always the single top-rated one
     searched = status != "no API key set"
     print(
         f"INFO:     [Budget Agent]: 📍 Google Places {kind} near ({lat:.4f}, {lng:.4f}) under ${max_cost:.0f} -> "

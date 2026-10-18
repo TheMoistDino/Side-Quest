@@ -27,7 +27,7 @@ from tools.browser_tools import (
     REAL_SOURCE_CATALOG,
     ground_and_validate_candidates,
     google_place_candidates,
-    in_los_angeles,
+    search_text,
     within_radius,
     price_levels_for_budget,
     make_deterministic_maps_url,
@@ -68,7 +68,7 @@ async def query_dining_scout(
 
     # 1. Live Google Places (when GOOGLE_MAPS_API_KEY is set); the curated catalog below is the fallback.
     live = await google_place_candidates(
-        f"{cuisine or 'popular restaurants and cafes'} in {in_los_angeles(area)}",
+        search_text(cuisine or "popular restaurants and cafes", area, center),
         scout_name="Dining Scout",
         category_fallback="Restaurant",
         dwell_for=bound_dining_dwell,
