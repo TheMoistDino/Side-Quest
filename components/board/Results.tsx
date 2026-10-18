@@ -1,29 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import type { Quest } from "@/types/quest";
+import type { Quest, QuestRequest } from "@/types/quest";
+import { QuestDetail } from "@/components/detail/QuestDetail";
 import { QuestBoard } from "./QuestBoard";
 
 const PANEL_ID = "quest-detail";
 
-type Props = { quests: Quest[] };
+type Props = { quests: Quest[]; origin: QuestRequest["location"] };
 
-export function Results({ quests }: Props) {
+export function Results({ quests, origin }: Props) {
   const [selectedId, setSelectedId] = useState(quests[0].id);
   const selected = quests.find((q) => q.id === selectedId) ?? quests[0];
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-10">
       <QuestBoard quests={quests} selectedId={selected.id} onSelect={setSelectedId} panelId={PANEL_ID} />
       <div id={PANEL_ID} role="tabpanel" aria-labelledby={`quest-tab-${selected.id}`}>
-        {/* Step 4: timeline + map for `selected` goes here. */}
-        <ol className="flex flex-col gap-2 rounded-2xl border border-line p-5 text-[15px]">
-          {selected.stops.map((s) => (
-            <li key={s.id}>
-              <span className="font-display font-extrabold">{s.order}.</span> {s.name}
-            </li>
-          ))}
-        </ol>
+        {/* Keyed so expanded reviews reset when switching quests. */}
+        <QuestDetail key={selected.id} quest={selected} origin={origin} />
       </div>
     </div>
   );

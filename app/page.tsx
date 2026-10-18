@@ -84,7 +84,7 @@ export default function Home() {
             {phase.data.quests.length === 0 ? (
               <EmptyState onEdit={() => goToStep(2)} />
             ) : (
-              <Results quests={phase.data.quests} />
+              <Results quests={phase.data.quests} origin={answers.location} />
             )}
           </div>
         )}

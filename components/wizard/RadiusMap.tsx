@@ -46,7 +46,7 @@ export default function RadiusMap({ lat, lng, radiusMiles }: Props) {
       boxZoom={false}
       keyboard={false}
       zoomControl={false}
-      className="radius-map size-full"
+      className="quiet-map size-full"
     >
       <TileLayer
         url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
