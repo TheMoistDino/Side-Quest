@@ -20,6 +20,7 @@ from schemas import (
     QuestCandidate,
     TransitOption,
     MealResult,
+    VerifiedReview,
 )
 from transit_agent import calculate_multi_modal_options
 from planner import (
@@ -189,8 +190,8 @@ def adapt_frontend_request_to_constraints(req: FrontendQuestRequest) -> QuestCon
         # Sensible default if timestamps are invalid or negative
         duration_minutes = 180
 
-    # Clamp duration to realistic bounds [30m, 480m]
-    duration_minutes = max(30, min(480, duration_minutes))
+    # Clamp duration to realistic bounds [30m, 1440m]
+    duration_minutes = max(30, min(1440, duration_minutes))
 
     departure_str = start_dt.strftime("%I:%M %p")
     return_cutoff_str = end_dt.strftime("%I:%M %p")
@@ -198,11 +199,14 @@ def adapt_frontend_request_to_constraints(req: FrontendQuestRequest) -> QuestCon
     # 2. Fiscal Budget
     budget = float(req.budgetPerPerson) if (req.budgetPerPerson is not None and isinstance(req.budgetPerPerson, (int, float)) and req.budgetPerPerson >= 0) else 35.0
 
-    # 3. Geographic Starting Point
+    # 3. Geographic Starting Point & Spatial Constraints
     lat = float(req.location.lat) if (req.location and req.location.lat is not None and isinstance(req.location.lat, (int, float))) else 34.0635
     lng = float(req.location.lng) if (req.location and req.location.lng is not None and isinstance(req.location.lng, (int, float))) else -118.4455
     label = req.location.label if (req.location and isinstance(req.location.label, str)) else None
     origin = resolve_nearest_neighborhood(lat, lng, label)
+
+    max_dist = float(req.maxDistanceMiles) if (req.maxDistanceMiles is not None and isinstance(req.maxDistanceMiles, (int, float)) and req.maxDistanceMiles > 0) else 10.0
+    group_sz = int(req.groupSize) if (req.groupSize is not None and isinstance(req.groupSize, int) and req.groupSize > 0) else 1
 
     # 4. Category & Vibe Normalization
     cat_raw = (req.category or "").strip().lower()
@@ -238,9 +242,10 @@ def adapt_frontend_request_to_constraints(req: FrontendQuestRequest) -> QuestCon
         vibe=vibe,
         departure_time=departure_str,
         return_cutoff=return_cutoff_str,
-        origin_lat=lat,
-        origin_lng=lng,
-        max_distance_miles=float(req.maxDistanceMiles) if req.maxDistanceMiles and req.maxDistanceMiles > 0 else None,
+        max_distance_miles=max_dist,
+        group_size=group_sz,
+        user_lat=lat,
+        user_lng=lng,
     )
 
 

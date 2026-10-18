@@ -25,9 +25,19 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
+import warnings
+import logging
+
+# Suppress noisy ledger contract polling warnings and python deprecation warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+logging.getLogger("uagents.network").setLevel(logging.ERROR)
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
+import dns_resilience
+dns_resilience.apply_dns_patches()
 
 from uagents import Agent, Context, Protocol
 from uagents.asgi import ASGIServer
@@ -209,14 +219,15 @@ async def run_multiagent_pipeline(
                 max_admission=constraints.budget_usd,
                 departure_time=getattr(constraints, "departure_time", None),
                 return_cutoff=getattr(constraints, "return_cutoff", None),
-                origin_lat=getattr(constraints, "origin_lat", None),
-                origin_lng=getattr(constraints, "origin_lng", None),
+                origin_lat=getattr(constraints, "user_lat", None),
+                origin_lng=getattr(constraints, "user_lng", None),
                 radius_miles=getattr(constraints, "max_distance_miles", None),
+                group_size=getattr(constraints, "group_size", 1),
             )
             await ctx.send(scout_agent.address, scout_query)
 
-            # Await full inter-agent pipeline resolution with extended async buffer (35s)
-            await asyncio.wait_for(session.pipeline_complete.wait(), timeout=35.0)
+            # Await full inter-agent pipeline resolution with fast async buffer (5s)
+            await asyncio.wait_for(session.pipeline_complete.wait(), timeout=5.0)
             if session.candidate and session.chosen_transit:
                 pipeline_succeeded = True
         except Exception as err:
@@ -422,13 +433,13 @@ async def handle_chat_message(ctx: Context, sender: str, msg: ChatMessage):
     """
     ctx.logger.info(f"📨 Incoming ChatMessage from {sender} (msg_id: {msg.msg_id})")
 
-    # 1. Immediate ACP Delivery Acknowledgement
+    # 1. Immediate ACP Delivery Acknowledgement (non-blocking background task)
     try:
         ack = ChatAcknowledgement(acknowledged_msg_id=msg.msg_id)
-        await ctx.send(sender, ack)
-        ctx.logger.info(f"✅ Dispatched ChatAcknowledgement to {sender}")
+        asyncio.create_task(ctx.send(sender, ack))
+        ctx.logger.info(f"✅ Queued ChatAcknowledgement to {sender}")
     except Exception as e:
-        ctx.logger.warning(f"Could not send acknowledgement: {e}")
+        ctx.logger.warning(f"Could not queue acknowledgement: {e}")
 
     # 2. Extract plain text query
     incoming_query = ""

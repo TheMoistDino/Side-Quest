@@ -73,8 +73,18 @@ class QuestCandidate(Model):
     rating: float = 4.6
     review_count: int = 150
     review_summary: str = ""
+    distance_from_user: Optional[float] = None
+    domain: Optional[str] = None
+    business_status: str = "OPERATIONAL"
+    permanently_closed: bool = False
 
     def __init__(self, **data):
+        # Synchronize business status
+        if data.get("permanently_closed") is True:
+            data["business_status"] = "CLOSED_PERMANENTLY"
+        elif data.get("business_status") in ["CLOSED_PERMANENTLY", "CLOSED_TEMPORARILY"]:
+            data["permanently_closed"] = (data.get("business_status") == "CLOSED_PERMANENTLY")
+
         # Synchronize admission costs
         if "admission_cost" in data and "estimated_admission" not in data:
             data["estimated_admission"] = float(data["admission_cost"])
@@ -121,6 +131,7 @@ class ScoutQuery(Model):
     max_admission: float
     departure_time: Optional[str] = None
     return_cutoff: Optional[str] = None
+    group_size: Optional[int] = 1
     # Exact start point and the user's max travel distance (frontend path); None = area-only search
     origin_lat: Optional[float] = None
     origin_lng: Optional[float] = None
@@ -143,6 +154,9 @@ class DiningQuery(Model):
     budget_max: float = 50.0
     departure_time: Optional[str] = None
     return_cutoff: Optional[str] = None
+    max_distance_miles: Optional[float] = 10.0
+    user_lat: Optional[float] = None
+    user_lng: Optional[float] = None
 
 
 class TrailsQuery(Model):
@@ -152,6 +166,9 @@ class TrailsQuery(Model):
     time_window_mins: int = 90
     departure_time: Optional[str] = None
     return_cutoff: Optional[str] = None
+    max_distance_miles: Optional[float] = 10.0
+    user_lat: Optional[float] = None
+    user_lng: Optional[float] = None
 
 
 class CultureQuery(Model):
@@ -161,6 +178,9 @@ class CultureQuery(Model):
     admission_max: float = 30.0
     departure_time: Optional[str] = None
     return_cutoff: Optional[str] = None
+    max_distance_miles: Optional[float] = 10.0
+    user_lat: Optional[float] = None
+    user_lng: Optional[float] = None
 
 
 class ScoutSubResult(Model):

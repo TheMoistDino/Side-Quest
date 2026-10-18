@@ -39,7 +39,12 @@ from schemas import ScoutQuery, ScoutResult, QuestCandidate, VerifiedReview
 from dining_scout import dining_scout, query_dining_scout
 from trails_scout import trails_scout, query_trails_scout
 from culture_scout import culture_scout, query_culture_scout
-from tools.browser_tools import ground_and_validate_candidates
+from tools.browser_tools import (
+    ground_and_validate_candidates,
+    google_place_candidates,
+    search_text,
+    within_radius,
+)
 
 SCOUT_SEED = os.getenv("SCOUT_SEED_PHRASE", "scout-subagent-seed-phrase-la-hacks-quest").strip()
 
@@ -120,19 +125,34 @@ def bound_dwell_time(category: str, raw_dwell: int) -> int:
 
 
 def is_open_during_window(
-    opening_hours: str,
+    opening_hours: Any,
     departure_time: Optional[str] = None,
     return_cutoff: Optional[str] = None,
+    business_status: str = "OPERATIONAL",
+    permanently_closed: bool = False,
 ) -> bool:
     """
     Verifies venue is operational during the specified travel window or current day/time.
+    Supports either an opening_hours string or a QuestCandidate object directly.
     Returns False if venue is demonstrably closed; True if open or if hours are flexible.
     """
+    if hasattr(opening_hours, "opening_hours"):
+        cand = opening_hours
+        opening_hours = getattr(cand, "opening_hours", "")
+        business_status = getattr(cand, "business_status", business_status)
+        permanently_closed = getattr(cand, "permanently_closed", permanently_closed)
+
+    if permanently_closed or business_status in ["CLOSED_PERMANENTLY", "CLOSED_TEMPORARILY"]:
+        return False
+
     if not opening_hours:
         return True
 
     text = opening_hours.strip()
     text_lower = text.lower()
+
+    if any(phrase in text_lower for phrase in ["permanently closed", "temporarily closed", "closed indefinitely"]):
+        return False
 
     if any(phrase in text_lower for phrase in ["open 24", "24/7", "sunrise", "always open"]):
         return True
@@ -287,28 +307,29 @@ LA_POI_CATALOG: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
                 "verified_url": "https://www.google.com/maps/search/?api=1&query=UCLA+Mathias+Botanical+Garden+707+Tiverton+Dr+Los+Angeles+CA",
             },
             {
-                "name": "Espresso Profeta Secret Brick Patio",
-                "lat": 34.0620,
-                "lng": -118.4465,
-                "admission": 7.0,
-                "dwell": 25,
-                "hours": "7:00 AM - 6:00 PM (Daily)",
-                "desc": "Artisanal velvet latte under ivy-covered brick arches.",
-                "perk": "+10 Agility, Caffeine Buff",
-                "address": "1129 Glendon Ave, Los Angeles, CA 90024",
+                "name": "Upside Down Coffee & Community Space",
+                "lat": 34.0632,
+                "lng": -118.4448,
+                "admission": 6.5,
+                "dwell": 35,
+                "hours": "7:30 AM - 5:00 PM (Daily)",
+                "desc": "Non-profit specialty coffee bar and community art space with sunny courtyard patio.",
+                "perk": "+15 Social Morale, Community Insight",
+                "address": "10962 Le Conte Ave, Los Angeles, CA 90024",
                 "category": "Coffee & Tea",
-                "rating": 4.5,
-                "reviewCount": 980,
-                "reviewSummary": "Artisan espresso drinks served in an ivy-draped brick alley courtyard away from Westwood traffic.",
+                "rating": 4.8,
+                "reviewCount": 420,
+                "reviewSummary": "A welcoming Westwood gathering space known for artisan pour-overs, friendly baristas, and relaxing outdoor patio.",
                 "reviews": [
                     {
-                        "author": "Sam R.",
+                        "author": "Marcus L.",
                         "rating": 5.0,
-                        "text": "Best velvet latte in LA. The patio feels like a slice of Europe in Westwood.",
-                        "source": "Yelp",
+                        "text": "Excellent pour-overs, friendly baristas, and lovely community patio away from campus rush.",
+                        "source": "Google Maps",
                     }
                 ],
-                "verified_url": "https://www.google.com/maps/search/?api=1&query=Espresso+Profeta+1129+Glendon+Ave+Los+Angeles+CA+90024",
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Upside+Down+Coffee+10962+Le+Conte+Ave+Los+Angeles+CA",
+                "business_status": "OPERATIONAL",
             },
         ],
         "food": [
@@ -362,6 +383,56 @@ LA_POI_CATALOG: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
                 ],
                 "verified_url": "https://www.cs.ucla.edu",
             }
+        ],
+        "arcade": [
+            {
+                "name": "Ackerman Union Game Zone & Arcade",
+                "lat": 34.0704,
+                "lng": -118.4441,
+                "admission": 8.0,
+                "dwell": 60,
+                "hours": "9:00 AM - 10:00 PM (Mon-Sat)",
+                "desc": "Campus gaming lounge and arcade with Dance Dance Revolution, billiards tables, fighting cabinets, and pinball.",
+                "perk": "+25 Rhythm Agility, Bruin High Score",
+                "address": "308 Westwood Plaza, Los Angeles, CA 90095",
+                "category": "Arcade & Gaming",
+                "rating": 4.6,
+                "reviewCount": 420,
+                "reviewSummary": "Hidden gem gaming spot in Westwood. Great pool tables, pinball, and classic rhythm games at budget student prices.",
+                "reviews": [
+                    {
+                        "author": "Tyler N.",
+                        "rating": 5.0,
+                        "text": "Hidden gem gaming spot in Westwood. Great pool tables, pinball, and classic rhythm games at budget student prices.",
+                        "source": "Google Maps",
+                    }
+                ],
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Ackerman+Union+308+Westwood+Plaza+Los+Angeles+CA",
+            },
+            {
+                "name": "Dave & Buster's West LA Arcade",
+                "lat": 33.9785,
+                "lng": -118.3907,
+                "admission": 20.0,
+                "dwell": 75,
+                "hours": "11:00 AM - 12:00 AM (Daily)",
+                "desc": "Massive state-of-the-art interactive arcade with multiplayer motion simulators, racing pods, and ticket redemption.",
+                "perk": "+35 Adrenaline Rush, High Score Chaser",
+                "address": "6081 Center Dr, Los Angeles, CA 90045",
+                "category": "Arcade & Gaming",
+                "rating": 4.4,
+                "reviewCount": 3100,
+                "reviewSummary": "Huge game floor with all the latest multiplayer arcade machines, virtual reality games, and classic air hockey.",
+                "reviews": [
+                    {
+                        "author": "Samir V.",
+                        "rating": 5.0,
+                        "text": "Huge game floor with all the latest multiplayer arcade machines, virtual reality games, and classic air hockey.",
+                        "source": "Google Maps",
+                    }
+                ],
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Dave+and+Busters+6081+Center+Dr+Los+Angeles+CA",
+            },
         ],
     },
     "sawtelle": {
@@ -511,6 +582,58 @@ LA_POI_CATALOG: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
         ],
     },
     "santa monica": {
+        "outdoors": [
+            {
+                "name": "Ocean View Park Bluff Trail",
+                "lat": 34.0042,
+                "lng": -118.4842,
+                "admission": 0.0,
+                "dwell": 50,
+                "hours": "Sunrise - Sunset (Daily)",
+                "desc": "Panoramic Pacific Palisades coastal bluffs overlooking Santa Monica and Venice beaches.",
+                "perk": "+20 Vitality, Ocean Clarity",
+                "address": "2701 Barnard Way, Santa Monica, CA 90405",
+                "category": "outdoors",
+                "rating": 4.8,
+                "reviewCount": 1600,
+                "reviewSummary": "Peaceful coastal trail perched on ocean bluffs with continuous sea breezes and unobstructed sunset vistas.",
+                "reviews": [
+                    {
+                        "author": "Brandon H.",
+                        "rating": 5.0,
+                        "text": "One of the best quiet ocean lookouts on the Westside. Watching the sunset here never gets old.",
+                        "source": "Google Maps",
+                    }
+                ],
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Ocean+View+Park+2701+Barnard+Way+Santa+Monica+CA",
+                "business_status": "OPERATIONAL",
+            },
+            {
+                "name": "Santa Monica Stairs & Ocean Promenade",
+                "lat": 34.0321,
+                "lng": -118.5135,
+                "admission": 0.0,
+                "dwell": 45,
+                "hours": "Sunrise - Sunset (Daily)",
+                "desc": "Renowned outdoor fitness steps leading down into Santa Monica canyon with coastal air.",
+                "perk": "+30 Cardiovascular Stamina",
+                "address": "699 Adelaide Dr, Santa Monica, CA 90402",
+                "category": "outdoors",
+                "rating": 4.6,
+                "reviewCount": 890,
+                "reviewSummary": "Steep wooden outdoor steps offering an intense cardiovascular workout with refreshing ocean breezes.",
+                "reviews": [
+                    {
+                        "author": "Megan F.",
+                        "rating": 5.0,
+                        "text": "Great outdoor leg workout with coastal breezes at the top of the canyon.",
+                        "source": "AllTrails",
+                    }
+                ],
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Santa+Monica+Stairs+Adelaide+Dr+Santa+Monica+CA",
+                "business_status": "OPERATIONAL",
+            },
+        ],
         "chill": [
             {
                 "name": "Ocean View Park Bluff Walk",
@@ -588,6 +711,56 @@ LA_POI_CATALOG: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
                 ],
                 "verified_url": "https://www.google.com/maps/search/?api=1&query=Bay+Cities+Italian+Deli+1517+Lincoln+Blvd+Santa+Monica+CA",
             }
+        ],
+        "arcade": [
+            {
+                "name": "Playland Arcade on Santa Monica Pier",
+                "lat": 34.0099,
+                "lng": -118.4975,
+                "admission": 15.0,
+                "dwell": 60,
+                "hours": "10:00 AM - 11:00 PM (Daily)",
+                "desc": "Historic beachfront arcade on the pier featuring classic skeeball, pinball machines, air hockey, and retro fighting games.",
+                "perk": "+30 Reflex Precision, Pier Nostalgia Buff",
+                "address": "250 Santa Monica Pier, Santa Monica, CA 90401",
+                "category": "Arcade & Gaming",
+                "rating": 4.5,
+                "reviewCount": 1850,
+                "reviewSummary": "Classic vintage arcade right over the ocean. Skeeball and retro games with the Pacific sunset right outside.",
+                "reviews": [
+                    {
+                        "author": "Dave R.",
+                        "rating": 5.0,
+                        "text": "Classic vintage arcade right over the ocean. Skeeball and retro games with the Pacific sunset right outside.",
+                        "source": "Google Maps",
+                    }
+                ],
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Playland+Arcade+250+Santa+Monica+Pier+Santa+Monica+CA",
+            },
+            {
+                "name": "Pacific Park Boardwalk Midway Games",
+                "lat": 34.0089,
+                "lng": -118.4984,
+                "admission": 12.0,
+                "dwell": 45,
+                "hours": "11:00 AM - 9:00 PM (Daily)",
+                "desc": "Oceanfront seaside midway carnival games including ring toss, balloon pop, and water race.",
+                "perk": "+20 Dexterity, Carnival Champion",
+                "address": "380 Santa Monica Pier, Santa Monica, CA 90401",
+                "category": "Arcade & Gaming",
+                "rating": 4.6,
+                "reviewCount": 2400,
+                "reviewSummary": "Fun boardwalk midway games with great prizes and iconic ocean views.",
+                "reviews": [
+                    {
+                        "author": "Chloe S.",
+                        "rating": 5.0,
+                        "text": "Fun boardwalk midway games with great prizes and iconic ocean views.",
+                        "source": "Google Maps",
+                    }
+                ],
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Pacific+Park+380+Santa+Monica+Pier+Santa+Monica+CA",
+            },
         ],
     },
     "koreatown": {
@@ -797,6 +970,56 @@ LA_POI_CATALOG: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
                 "verified_url": "https://www.angelsflight.org",
             }
         ],
+        "arcade": [
+            {
+                "name": "EightyTwo Vintage Arcade & Pinball",
+                "lat": 34.0452,
+                "lng": -118.2372,
+                "admission": 10.0,
+                "dwell": 75,
+                "hours": "4:00 PM - 2:00 AM (Tue-Sun)",
+                "desc": "Legendary classic arcade featuring 55+ fully restored 1980s and 1990s arcade cabinets and competitive pinball machines.",
+                "perk": "+40 Nostalgia Mastery, Flawless Combo",
+                "address": "707 E 4th Pl, Los Angeles, CA 90013",
+                "category": "Arcade & Gaming",
+                "rating": 4.6,
+                "reviewCount": 2900,
+                "reviewSummary": "The premier classic arcade in DTLA. Incredible pinball collection and all the 90s fighting and beat-em-up games.",
+                "reviews": [
+                    {
+                        "author": "Leo M.",
+                        "rating": 5.0,
+                        "text": "The premier classic arcade in DTLA. Incredible pinball collection and all the 90s fighting and beat-em-up games.",
+                        "source": "Google Maps",
+                    }
+                ],
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=EightyTwo+707+E+4th+Pl+Los+Angeles+CA",
+            },
+            {
+                "name": "Two Bit Circus Micro-Amusement Park",
+                "lat": 34.0354,
+                "lng": -118.2323,
+                "admission": 25.0,
+                "dwell": 90,
+                "hours": "1:00 PM - 11:00 PM (Wed-Sun)",
+                "desc": "Experiential high-tech playground with custom virtual reality arenas, story rooms, and retro-futuristic arcade games.",
+                "perk": "+45 Techno-Illusionist, Sci-Fi Explorer",
+                "address": "634 Mateo St, Los Angeles, CA 90021",
+                "category": "Arcade & Gaming",
+                "rating": 4.6,
+                "reviewCount": 1750,
+                "reviewSummary": "Mind-blowing gaming playground. VR arenas and unique indie arcade games you cannot play anywhere else.",
+                "reviews": [
+                    {
+                        "author": "Jessica T.",
+                        "rating": 5.0,
+                        "text": "Mind-blowing gaming playground. VR arenas and unique indie arcade games you cannot play anywhere else.",
+                        "source": "Google Maps",
+                    }
+                ],
+                "verified_url": "https://www.google.com/maps/search/?api=1&query=Two+Bit+Circus+634+Mateo+St+Los+Angeles+CA",
+            },
+        ],
     },
 }
 
@@ -818,7 +1041,12 @@ def search_live_pois(area: str, category: str, max_admission: float) -> List[Que
             headers = {
                 "Content-Type": "application/json",
                 "X-Goog-Api-Key": google_key.strip(),
-                "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location,places.regularOpeningHours,places.rating,places.userRatingCount,places.websiteUri,places.reviews",
+                "X-Goog-FieldMask": (
+                    "places.id,places.displayName,places.formattedAddress,places.location,"
+                    "places.regularOpeningHours,places.currentOpeningHours,places.businessStatus,"
+                    "places.rating,places.userRatingCount,places.websiteUri,places.reviews,"
+                    "places.generativeSummary,places.reviewSummary"
+                ),
             }
             body = {"textQuery": f"{category} in {area} Los Angeles", "maxResultCount": 3}
             res = requests.post(url, headers=headers, json=body, timeout=4.0)
@@ -826,6 +1054,11 @@ def search_live_pois(area: str, category: str, max_admission: float) -> List[Que
                 data = res.json()
                 candidates: List[QuestCandidate] = []
                 for p in data.get("places", []):
+                    # Filter out temporary and permanent closures
+                    b_status = p.get("businessStatus", "OPERATIONAL")
+                    if b_status in ["CLOSED_PERMANENTLY", "CLOSED_TEMPORARILY"]:
+                        continue
+
                     p_name = p.get("displayName", {}).get("text", f"{area} Highlight")
                     p_addr = p.get("formattedAddress", f"{area}, Los Angeles, CA")
                     loc = p.get("location", {})
@@ -850,6 +1083,17 @@ def search_live_pois(area: str, category: str, max_admission: float) -> List[Que
                     maps_url = make_deterministic_maps_url(p_name, p_addr, place_id=place_id)
                     final_url = website_uri if website_uri else maps_url
 
+                    # Google Places Review Summaries aggregation
+                    rev_summary = ""
+                    if p.get("reviewSummary", {}).get("text", {}).get("text"):
+                        rev_summary = p["reviewSummary"]["text"]["text"]
+                    elif p.get("generativeSummary", {}).get("overview", {}).get("text"):
+                        rev_summary = p["generativeSummary"]["overview"]["text"]
+                    elif verified_reviews:
+                        rev_summary = f"Visitors highlight: {verified_reviews[0].text[:120]}..."
+                    else:
+                        rev_summary = f"Verified Google Places discovery in {area}."
+
                     candidates.append(
                         QuestCandidate(
                             id=str(uuid.uuid4())[:8],
@@ -868,7 +1112,9 @@ def search_live_pois(area: str, category: str, max_admission: float) -> List[Que
                             category=category.capitalize(),
                             rating=float(p.get("rating", 4.6)),
                             review_count=int(p.get("userRatingCount", 250)),
-                            review_summary=f"Verified Google Places discovery in {area}.",
+                            review_summary=rev_summary,
+                            business_status=b_status,
+                            permanently_closed=(b_status == "CLOSED_PERMANENTLY"),
                         )
                     )
                 if candidates:
@@ -956,6 +1202,10 @@ def query_poi_database(
     for cat_key, items in region.items():
         if cat_key in cat_clean or cat_clean in cat_key:
             matched_items.extend(items)
+        elif any(sub in cat_clean for sub in ["outdoor", "outdoors", "trail", "hike", "nature", "beach", "adventure", "active"]) and cat_key in ["outdoors", "trails", "chill"]:
+            matched_items.extend(items)
+        elif any(sub in cat_clean for sub in ["game", "games", "arcade", "bowling", "pinball", "vr", "play", "billiards"]) and cat_key in ["arcade", "games"]:
+            matched_items.extend(items)
         elif any(sub in cat_clean for sub in ["thrift", "vintage", "shop", "boutique"]) and cat_key in ["thrifting", "thrift", "art"]:
             matched_items.extend(items)
         elif any(sub in cat_clean for sub in ["coffee", "tea", "cafe", "boba"]) and cat_key in ["coffee", "chill"]:
@@ -970,12 +1220,22 @@ def query_poi_database(
 
     candidates: List[QuestCandidate] = []
     for item in matched_items:
+        # Check closures and business status
+        if item.get("permanently_closed") or item.get("business_status") in ["CLOSED_PERMANENTLY", "CLOSED_TEMPORARILY"]:
+            continue
+
         # Budget filter
         if item["admission"] > max_admission and max_admission > 0.0:
             continue
 
         # Operating hours filter
-        if not is_open_during_window(item.get("hours", ""), departure_time, return_cutoff):
+        if not is_open_during_window(
+            item.get("hours", ""),
+            departure_time,
+            return_cutoff,
+            business_status=item.get("business_status", "OPERATIONAL"),
+            permanently_closed=item.get("permanently_closed", False),
+        ):
             continue
 
         # Bounded dwell time
@@ -1094,6 +1354,57 @@ async def verify_and_ground_candidates(
 # 5. Ensemble Coordinator & Category Intent Router
 # ==============================================================================
 
+# Words that mark a real games venue (Google category or name), so a "game bar" search can't hand back
+# a plain restaurant or a hiking trail.
+GAMING_KEYWORDS = [
+    "arcade", "barcade", "bowling", "amusement", "game", "gaming", "pinball", "billiard", "pool hall",
+    "escape room", "laser tag", "karaoke", "mini golf", "miniature golf", "go-kart", "go kart", "vr ", "virtual reality",
+    "family entertainment", "dave & buster", "round1", "button mash", "ax throwing", "axe throwing",
+]
+
+
+def _is_gaming_venue(cand: QuestCandidate) -> bool:
+    text = f"{cand.category} {cand.name}".lower()
+    return any(k in text for k in GAMING_KEYWORDS)
+
+
+async def query_games_scout(
+    area: str,
+    center: Optional[Tuple[float, float]] = None,
+    radius_miles: Optional[float] = None,
+    max_admission: float = 50.0,
+    departure_time: Optional[str] = None,
+    return_cutoff: Optional[str] = None,
+) -> List[QuestCandidate]:
+    """Games scout: live Google arcades, bowling alleys and game bars (only venues that look like games
+    places), falling back to the curated arcade catalog when Google is unavailable or finds none."""
+    live = await google_place_candidates(
+        search_text("arcades, bowling alleys, pinball and game bars", area, center),
+        scout_name="Games Scout",
+        category_fallback="Arcade",
+        dwell_for=lambda _type: 75,
+        unknown_cost=20.0,  # play cards / lanes vary; shown as "~$20 estimate"
+        perk="+25 High Score Bonus",
+        center=center,
+        radius_miles=radius_miles,
+    )
+    games_only = [c for c in live if _is_gaming_venue(c) and (max_admission <= 0 or c.admission_cost <= max_admission)]
+    if live:
+        dropped = len(live) - len(games_only)
+        print(f"INFO:     [Games Scout]: 🕹️ kept {len(games_only)} games venues, dropped {dropped} non-games results", flush=True)
+    if games_only:
+        return await ground_and_validate_candidates(games_only, area_hint=area)
+
+    catalog = query_poi_database(
+        area=area,
+        category="arcade",
+        max_admission=max_admission,
+        departure_time=departure_time,
+        return_cutoff=return_cutoff,
+    )
+    return await ground_and_validate_candidates(within_radius(catalog, center, radius_miles) or catalog[:3], area_hint=area)
+
+
 async def route_ensemble_query(
     area: str,
     category: str,
@@ -1117,22 +1428,38 @@ async def route_ensemble_query(
     tasks = []
 
     # Detect category intents
+    wants_gaming = any(k in cat_lower for k in ["game", "games", "arcade", "bowling", "pinball", "vr", "play", "billiards"])
     wants_dining = any(k in cat_lower for k in ["food", "dining", "cafe", "coffee", "dessert", "boba", "ramen", "eat", "snack"])
-    wants_trails = any(k in cat_lower for k in ["trail", "outdoor", "walk", "park", "hike", "nature", "beach"])
+    wants_trails = any(k in cat_lower for k in ["trail", "outdoor", "outdoors", "walk", "park", "hike", "nature", "beach", "adventure", "active", "stairs"])
     wants_culture = any(k in cat_lower for k in ["culture", "museum", "art", "gallery", "historic", "thrift", "vintage", "book"])
 
-    # If category is mixed, general ("chill", "adventure"), or matched multiple intents
-    if not (wants_dining or wants_trails or wants_culture) or cat_lower in ["mixed", "chill", "all", ""]:
-        tasks.append(query_dining_scout(area=area, center=center, radius_miles=radius_miles, budget_max=max_admission, session_id=session_id))
+    if wants_gaming:
+        # Games/arcade: live Google arcades & game venues within the radius, arcade catalog as fallback
+        return await query_games_scout(
+            area=area,
+            center=center,
+            radius_miles=radius_miles,
+            max_admission=max_admission,
+            departure_time=departure_time,
+            return_cutoff=return_cutoff,
+        )
+    elif wants_trails and not wants_dining:
+        # User explicitly requested outdoor adventure/trails; query TrailsScout only
+        tasks.append(query_trails_scout(area=area, center=center, radius_miles=radius_miles, intensity="moderate", time_window_mins=90, session_id=session_id))
+    elif wants_culture and not wants_dining:
+        tasks.append(query_culture_scout(area=area, center=center, radius_miles=radius_miles, admission_max=max_admission, session_id=session_id))
+    elif wants_dining and not (wants_trails or wants_culture):
+        tasks.append(query_dining_scout(area=area, center=center, radius_miles=radius_miles, cuisine=category, budget_max=max_admission, session_id=session_id))
+    elif cat_lower in ["chill", "relaxation"]:
+        # Chill prioritizes scenic parks/trails and culture before dining
         tasks.append(query_trails_scout(area=area, center=center, radius_miles=radius_miles, time_window_mins=90, session_id=session_id))
         tasks.append(query_culture_scout(area=area, center=center, radius_miles=radius_miles, admission_max=max_admission, session_id=session_id))
+        tasks.append(query_dining_scout(area=area, center=center, radius_miles=radius_miles, budget_max=max_admission, session_id=session_id))
     else:
-        if wants_dining:
-            tasks.append(query_dining_scout(area=area, center=center, radius_miles=radius_miles, cuisine=category, budget_max=max_admission, session_id=session_id))
-        if wants_trails:
-            tasks.append(query_trails_scout(area=area, center=center, radius_miles=radius_miles, intensity="moderate", time_window_mins=90, session_id=session_id))
-        if wants_culture:
-            tasks.append(query_culture_scout(area=area, center=center, radius_miles=radius_miles, admission_max=max_admission, session_id=session_id))
+        # Mixed or general exploration: balanced ensemble with trails and culture first
+        tasks.append(query_trails_scout(area=area, center=center, radius_miles=radius_miles, time_window_mins=90, session_id=session_id))
+        tasks.append(query_culture_scout(area=area, center=center, radius_miles=radius_miles, admission_max=max_admission, session_id=session_id))
+        tasks.append(query_dining_scout(area=area, center=center, radius_miles=radius_miles, budget_max=max_admission, session_id=session_id))
 
     results = await asyncio.gather(*tasks)
     aggregated: List[QuestCandidate] = []
