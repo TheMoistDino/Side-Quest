@@ -1,4 +1,5 @@
 export const BUDGET_MAX = 100;
+export const BUDGET_TYPED_MAX = 1000;
 
 export function formatMoney(amount: number, opts: { estimate?: boolean } = {}): string {
   const value = amount === 0 ? "Free" : `$${Number.isInteger(amount) ? amount : amount.toFixed(2)}`;
@@ -7,7 +8,8 @@ export function formatMoney(amount: number, opts: { estimate?: boolean } = {}): 
 
 export function formatBudget(amount: number): string {
   if (amount === 0) return "Free";
-  return amount >= BUDGET_MAX ? `$${BUDGET_MAX}+` : `$${amount}`;
+  // Exactly the slider's max means "or more"; a typed amount above it reads literally.
+  return amount === BUDGET_MAX ? `$${BUDGET_MAX}+` : `$${amount}`;
 }
 
 export function formatMiles(miles: number): string {
@@ -15,11 +17,15 @@ export function formatMiles(miles: number): string {
   return `${miles < 10 ? miles.toFixed(1).replace(/\.0$/, "") : Math.round(miles)} mi`;
 }
 
-export function formatDuration(minutes: number): string {
+export function formatDuration(minutes: number, opts: { compact?: boolean } = {}): string {
   const m = Math.round(minutes);
-  if (m < 60) return `${m} min`;
   const h = Math.floor(m / 60);
   const rest = m % 60;
+  if (opts.compact) {
+    if (m < 60) return `${m}m`;
+    return rest === 0 ? `${h}h` : `${h}h ${rest}m`;
+  }
+  if (m < 60) return `${m} min`;
   return rest === 0 ? `${h} hr` : `${h} hr ${rest} min`;
 }
 

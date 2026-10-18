@@ -1,92 +1,132 @@
 @import "tailwindcss";
 
-/* Design tokens mirror the "Side Quest Board" Paper file (mood: signage). */
+/* Theme follows <html data-theme>. Dark is the default (see app/layout.tsx). */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Design tokens mirror the "Side Quest Board" Paper file, page "v2 — Minimal dark wizard". */
+:root,
+[data-theme="dark"] {
+  --bg: #0e0f11;
+  --surface: #17181b;
+  --line: #2a2c30;
+  --text: #f2f2f0;
+  --muted: #9a9da3;
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --bg: #ffffff;
+  --surface: #f4f4f5;
+  --line: #e4e4e7;
+  --text: #14161a;
+  --muted: #5b5f66;
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-line: var(--line);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+}
+
 @theme {
-  --color-bg: #ffffff;
-  --color-ink: #14161a;
-  --color-muted: #5b5f66;
-  --color-fog: #eeeeee;
-  --color-line: #d9dadc;
   --color-sign: #ffc72c;
-  --color-trail: #1f7a4d;
-  --color-danger: #d93a2b;
+  --color-on-sign: #14161a;
+  --color-danger: #ef5b4c;
 
   --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 
   --tracking-tight: -0.03em;
-  --tracking-caps: 0.08em;
 
-  --shadow-hard-sm: 2px 2px 0 var(--color-ink);
-  --shadow-hard: 4px 4px 0 var(--color-ink);
-
-  --animate-hop: hop 0.9s ease-in-out infinite;
-  --animate-slide: slide 1.4s ease-in-out infinite;
+  --animate-pulse-dot: pulse-dot 1.2s ease-in-out infinite;
   --animate-rise: rise 0.35s ease-out both;
 
-  @keyframes hop {
-    0%, 100% { transform: translateY(0); }
-    40% { transform: translateY(-12px); }
-  }
-  @keyframes slide {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(250%); }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 0.25; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1); }
   }
   @keyframes rise {
-    from { opacity: 0; transform: translateY(6px); }
+    from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }
   }
 }
 
 body {
   background: var(--color-bg);
-  color: var(--color-ink);
+  color: var(--color-text);
+  transition: background-color 0.2s, color 0.2s;
 }
 
-/* Range slider: ink fill up to --fill, yellow sign-post thumb. */
+/* Range slider: text-colored fill up to --fill, solid round thumb. */
 .quest-range {
   appearance: none;
   width: 100%;
-  height: 20px;
+  height: 24px;
   background: transparent;
   cursor: pointer;
 }
 .quest-range::-webkit-slider-runnable-track {
-  height: 6px;
+  height: 4px;
   border-radius: 999px;
-  background: linear-gradient(to right, var(--color-ink) var(--fill), var(--color-fog) var(--fill));
+  background: linear-gradient(to right, var(--color-text) var(--fill), var(--color-line) var(--fill));
 }
 .quest-range::-moz-range-track {
-  height: 6px;
+  height: 4px;
   border-radius: 999px;
-  background: linear-gradient(to right, var(--color-ink) var(--fill), var(--color-fog) var(--fill));
+  background: linear-gradient(to right, var(--color-text) var(--fill), var(--color-line) var(--fill));
 }
 .quest-range::-webkit-slider-thumb {
   appearance: none;
-  width: 22px;
-  height: 22px;
-  margin-top: -8px;
+  width: 24px;
+  height: 24px;
+  margin-top: -10px;
   border-radius: 999px;
-  background: var(--color-sign);
-  border: 2px solid var(--color-ink);
+  background: var(--color-text);
+  border: 0;
 }
 .quest-range::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   border-radius: 999px;
-  background: var(--color-sign);
-  border: 2px solid var(--color-ink);
+  background: var(--color-text);
+  border: 0;
 }
 .quest-range:focus-visible {
   outline: none;
 }
 .quest-range:focus-visible::-webkit-slider-thumb {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-sign) 50%, transparent);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-sign) 45%, transparent);
+}
+.quest-range:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-sign) 45%, transparent);
+}
+
+/* Radius map: desaturated OSM tiles, inverted in dark mode so the yellow circle is the only color. */
+.radius-map {
+  background: var(--color-surface);
+}
+.radius-map .leaflet-tile-pane {
+  filter: grayscale(1) contrast(0.85) brightness(1.04);
+}
+[data-theme="dark"] .radius-map .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) grayscale(1) brightness(0.8) contrast(0.9);
+}
+.radius-map .leaflet-control-attribution {
+  background: color-mix(in srgb, var(--color-bg) 70%, transparent);
+  color: var(--color-muted);
+  font-size: 10px;
+}
+.radius-map .leaflet-control-attribution a {
+  color: var(--color-muted);
 }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

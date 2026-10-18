@@ -1,83 +1,94 @@
 "use client";
 
-import { useRef, useState } from "react";
-import type { QuestRequest, QuestResponse } from "@/types/quest";
+import { useEffect, useRef, useState } from "react";
+import type { QuestResponse } from "@/types/quest";
 import { generateQuests, QuestApiError } from "@/lib/api";
-import { QuestForm } from "@/components/form/QuestForm";
+import { TopBar } from "@/components/TopBar";
+import { Wizard, STEP_COUNT } from "@/components/wizard/Wizard";
+import { INITIAL_ANSWERS, defaultWindow, toQuestRequest, type Answers } from "@/components/wizard/answers";
 import { LoadingState } from "@/components/states/LoadingState";
 import { ErrorState } from "@/components/states/ErrorState";
 import { EmptyState } from "@/components/states/EmptyState";
+import { AnswerSummary } from "@/components/board/AnswerSummary";
+import { Results } from "@/components/board/Results";
 
-type Status =
-  | { kind: "idle" }
+type Phase =
+  | { kind: "wizard"; step: number }
   | { kind: "loading" }
   | { kind: "error"; message: string }
-  | { kind: "success"; data: QuestResponse };
+  | { kind: "results"; data: QuestResponse };
 
 export default function Home() {
-  const [status, setStatus] = useState<Status>({ kind: "idle" });
-  const [lastRequest, setLastRequest] = useState<QuestRequest | null>(null);
+  const [phase, setPhase] = useState<Phase>({ kind: "wizard", step: 0 });
+  const [answers, setAnswers] = useState<Answers>(INITIAL_ANSWERS);
   const requestId = useRef(0);
-  const resultsRef = useRef<HTMLElement>(null);
 
-  async function run(req: QuestRequest) {
+  // Default time window depends on the viewer's clock and time zone, so set it after mount.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAnswers((a) => (a.start ? a : { ...a, ...defaultWindow() }));
+  }, []);
+
+  const screen = phase.kind === "wizard" ? `step-${phase.step}` : phase.kind;
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [screen]);
+
+  async function search() {
     const id = ++requestId.current;
-    setLastRequest(req);
-    setStatus({ kind: "loading" });
-    if (window.matchMedia("(max-width: 1023px)").matches) {
-      resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+    setPhase({ kind: "loading" });
     try {
-      const data = await generateQuests(req);
-      if (id === requestId.current) setStatus({ kind: "success", data });
+      const data = await generateQuests(toQuestRequest(answers));
+      if (id === requestId.current) setPhase({ kind: "results", data });
     } catch (err) {
       if (id !== requestId.current) return;
       const message = err instanceof QuestApiError ? err.message : "Something went wrong. Please try again.";
-      setStatus({ kind: "error", message });
+      setPhase({ kind: "error", message });
     }
   }
 
-  const retry = () => lastRequest && run(lastRequest);
+  const goToStep = (step: number) => {
+    requestId.current++; // drop any in-flight response
+    setPhase({ kind: "wizard", step });
+  };
+
+  const wide = phase.kind === "results";
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-5 py-7 lg:flex-row lg:gap-12 lg:px-8 lg:py-10">
-      <aside className="flex w-full flex-col gap-7 lg:sticky lg:top-10 lg:w-[420px] lg:shrink-0 lg:self-start">
-        <header className="flex flex-col gap-2.5">
-          <div className="flex items-center gap-2">
-            <span className="size-[22px] -rotate-[8deg] rounded-md border-2 border-ink bg-sign" aria-hidden />
-            <span className="text-xs font-bold uppercase tracking-caps">Side Quest Board</span>
-          </div>
-          <h1 className="font-display text-[44px] font-extrabold leading-[44px] tracking-tight">
-            Got free time?
-            <br />
-            Pick a quest.
-          </h1>
-          <p className="text-[15px] leading-[22px] text-muted">
-            Tell us your window and budget. We&apos;ll plot a few short adventures nearby.
-          </p>
-        </header>
-        <QuestForm onSubmit={run} busy={status.kind === "loading"} />
-      </aside>
+    <div className={`mx-auto flex min-h-dvh w-full flex-col px-6 ${wide ? "max-w-5xl" : "max-w-xl"}`}>
+      <TopBar
+        progress={phase.kind === "wizard" ? { step: phase.step, total: STEP_COUNT } : undefined}
+        onHome={phase.kind === "wizard" && phase.step === 0 ? undefined : () => goToStep(0)}
+      />
 
-      <section ref={resultsRef} aria-label="Quest results" className="min-w-0 flex-1 scroll-mt-6">
-        {status.kind === "idle" && <EmptyState variant="idle" />}
-        {status.kind === "loading" && <LoadingState locationLabel={lastRequest?.location.label} />}
-        {status.kind === "error" && <ErrorState message={status.message} onRetry={retry} />}
-        {status.kind === "success" &&
-          (status.data.quests.length === 0 ? (
-            <EmptyState variant="no-results" onRetry={retry} />
-          ) : (
-            // Temporary until the Board lands in step 3.
-            <ul className="flex flex-col gap-3">
-              {status.data.quests.map((q) => (
-                <li key={q.id} className="rounded-2xl border-2 border-ink p-5">
-                  <p className="font-display text-2xl font-extrabold tracking-tight">{q.title}</p>
-                  <p className="text-[15px] text-muted">{q.tagline}</p>
-                </li>
-              ))}
-            </ul>
-          ))}
-      </section>
-    </main>
+      <main className="flex flex-1 flex-col pb-6">
+        {phase.kind === "wizard" && (
+          <Wizard
+            step={phase.step}
+            answers={answers}
+            onChange={(patch) => setAnswers((a) => ({ ...a, ...patch }))}
+            onStep={goToStep}
+            onSubmit={search}
+          />
+        )}
+
+        {phase.kind === "loading" && <LoadingState locationLabel={answers.location.label} />}
+
+        {phase.kind === "error" && (
+          <ErrorState message={phase.message} onRetry={search} onEdit={() => goToStep(STEP_COUNT - 1)} />
+        )}
+
+        {phase.kind === "results" && (
+          <div className="flex animate-rise flex-col gap-8 py-10">
+            <AnswerSummary answers={answers} onEdit={goToStep} />
+            {phase.data.quests.length === 0 ? (
+              <EmptyState onEdit={() => goToStep(2)} />
+            ) : (
+              <Results quests={phase.data.quests} />
+            )}
+          </div>
+        )}
+      </main>
+    </div>
   );
 }

@@ -8,7 +8,6 @@ const MESSAGES = [
   "Counting the cost…",
   "Plotting the route…",
   "Asking the locals…",
-  "Sharpening the map…",
 ];
 
 type Props = { locationLabel?: string };
@@ -22,29 +21,17 @@ export function LoadingState({ locationLabel }: Props) {
   }, []);
 
   return (
-    <div role="status" aria-live="polite" className="flex min-h-80 flex-col items-center justify-center gap-5 rounded-2xl bg-fog p-8 text-center">
-      <div className="flex items-end gap-2.5" aria-hidden>
-        {[1, 2, 3].map((n) => (
-          <span
-            key={n}
-            className={[
-              "flex size-9 animate-hop items-center justify-center rounded-full border-2 border-ink font-display text-base font-extrabold",
-              n === 1 ? "bg-sign" : n === 2 ? "bg-bg" : "border-dashed bg-bg text-muted",
-            ].join(" ")}
-            style={{ animationDelay: `${(n - 1) * 0.15}s` }}
-          >
-            {n}
-          </span>
+    <div role="status" aria-live="polite" className="flex flex-1 flex-col justify-center gap-6 py-10">
+      <div className="flex gap-2" aria-hidden>
+        {[0, 1, 2].map((n) => (
+          <span key={n} className="size-2.5 animate-pulse-dot rounded-full bg-sign" style={{ animationDelay: `${n * 0.18}s` }} />
         ))}
       </div>
-      <div className="flex flex-col gap-1.5">
-        <p key={i} className="animate-rise font-display text-[26px] font-extrabold tracking-tight">
+      <div className="flex flex-col gap-2.5">
+        <p key={i} className="animate-rise font-display text-[40px] leading-[42px] font-extrabold tracking-tight">
           {MESSAGES[i]}
         </p>
-        <p className="text-sm text-muted">Plotting 3 routes near {locationLabel || "you"}</p>
-      </div>
-      <div className="relative h-1.5 w-44 overflow-hidden rounded-full bg-bg" aria-hidden>
-        <div className="absolute inset-y-0 left-0 w-2/5 animate-slide rounded-full bg-ink" />
+        <p className="text-[15px] text-muted">Plotting a few routes near {locationLabel || "you"}</p>
       </div>
     </div>
   );
