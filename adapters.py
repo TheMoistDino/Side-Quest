@@ -382,7 +382,7 @@ def _build_single_quest(
                 r_rating = float(getattr(r, "rating", 5.0))
                 r_snippet = getattr(r, "text", None) or getattr(r, "snippet", "Authentic visitor experience in Los Angeles.")
                 r_source = getattr(r, "source", None) or getattr(r, "sourceName", "Google Maps")
-                r_url = getattr(primary_poi, "verified_url", None) or getattr(primary_poi, "source_url", "https://maps.google.com")
+                r_url = getattr(r, "source_url", None) or getattr(primary_poi, "verified_url", None) or getattr(primary_poi, "source_url", "https://maps.google.com")
 
             poi_reviews.append(
                 FrontendReview(
@@ -393,16 +393,7 @@ def _build_single_quest(
                     sourceUrl=r_url,
                 )
             )
-    else:
-        poi_reviews.append(
-            FrontendReview(
-                author="Alex M.",
-                rating=5.0,
-                snippet=f"Must-visit stop in {constraints.origin}. Well worth the dwell time.",
-                sourceName="Google Maps",
-                sourceUrl=primary_poi.verified_url or primary_poi.source_url or "https://maps.google.com",
-            )
-        )
+    # No reviews -> send none. The contract promises real snippets, so never invent one.
 
     canonical_poi_url = primary_poi.verified_url or primary_poi.source_url or "https://maps.google.com"
 
@@ -417,7 +408,7 @@ def _build_single_quest(
         startTime=stop1_start_iso,
         durationMinutes=stop1_dwell,
         estimatedCost=stop1_cost,
-        costIsEstimate=False if stop1_cost == 0 else False,
+        costIsEstimate=bool(getattr(primary_poi, "cost_is_estimate", False)) and stop1_cost > 0,
         distanceFromPreviousMiles=dist_1,
         travelFromPreviousMinutes=travel_mins_1,
         travelMode=mode_1,
@@ -447,15 +438,9 @@ def _build_single_quest(
 
         stop2_start_iso = add_minutes_iso(stop1_start_iso, stop1_dwell + travel_to_meal_mins)
 
-        meal_reviews = [
-            FrontendReview(
-                author="Priya S.",
-                rating=5,
-                snippet="Perfect recharge stop! Quality is always consistent and service is fast.",
-                sourceName="Yelp",
-                sourceUrl=f"https://maps.google.com/?q={meal_name.replace(' ', '+')}",
-            )
-        ]
+        # The budget agent doesn't return review text, and the contract promises real snippets,
+        # so the meal stop ships without reviews rather than with an invented one.
+        meal_reviews: List[FrontendReview] = []
 
         stop2 = FrontendStop(
             id=f"stop-meal-{quest_index}",

@@ -493,6 +493,162 @@ REAL_SOURCE_CATALOG: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
 # 3. Candidate Grounding & Anti-404 Fallback Runner
 # ==============================================================================
 
+# ==============================================================================
+# Live Google Places discovery (used by the Dining / Trails / Culture scouts)
+# ==============================================================================
+
+GOOGLE_PLACES_URL = "https://places.googleapis.com/v1/places:searchText"
+GOOGLE_PLACES_FIELDS = ",".join(
+    [
+        "places.id",
+        "places.displayName",
+        "places.formattedAddress",
+        "places.location",
+        "places.rating",
+        "places.userRatingCount",
+        "places.websiteUri",
+        "places.googleMapsUri",
+        "places.priceLevel",
+        "places.primaryType",
+        "places.primaryTypeDisplayName",
+        "places.editorialSummary",
+        "places.reviews",
+    ]
+)
+
+# Google only gives a price *level*, so these are per-person estimates (flagged as such downstream).
+PRICE_LEVEL_ESTIMATE_USD = {
+    "PRICE_LEVEL_FREE": 0.0,
+    "PRICE_LEVEL_INEXPENSIVE": 12.0,
+    "PRICE_LEVEL_MODERATE": 25.0,
+    "PRICE_LEVEL_EXPENSIVE": 45.0,
+    "PRICE_LEVEL_VERY_EXPENSIVE": 80.0,
+}
+
+
+def in_los_angeles(area: str) -> str:
+    """'Westwood' -> 'Westwood, Los Angeles'; leaves 'Westwood, Los Angeles' alone."""
+    area = (area or "Los Angeles").strip()
+    return area if "los angeles" in area.lower() else f"{area}, Los Angeles"
+
+
+def google_places_search(text_query: str, max_results: int = 4, timeout: float = 5.0):
+    """Text Search (Places API New). Returns (places, status) and never raises."""
+    key = (os.getenv("GOOGLE_PLACES_API_KEY") or os.getenv("GOOGLE_MAPS_API_KEY") or "").strip()
+    if not key:
+        return [], "no API key set"
+    try:
+        res = requests.post(
+            GOOGLE_PLACES_URL,
+            headers={
+                "Content-Type": "application/json",
+                "X-Goog-Api-Key": key,
+                "X-Goog-FieldMask": GOOGLE_PLACES_FIELDS,
+            },
+            json={"textQuery": text_query, "maxResultCount": max_results},
+            timeout=timeout,
+        )
+    except requests.RequestException as err:
+        return [], f"request failed ({type(err).__name__})"
+    if res.status_code != 200:
+        try:
+            message = res.json().get("error", {}).get("message", "")
+        except ValueError:
+            message = res.text
+        return [], f"HTTP {res.status_code}: {message[:160]}"
+    places = res.json().get("places", [])
+    return places, f"{len(places)} places"
+
+
+def place_to_candidate(
+    place: Dict[str, Any],
+    *,
+    category_fallback: str,
+    dwell_mins: int,
+    unknown_cost: float,
+    perk: str,
+) -> QuestCandidate:
+    """Maps a Google Places result to a QuestCandidate using only data Google returned."""
+    name = place.get("displayName", {}).get("text", "Unnamed place")
+    address = place.get("formattedAddress", "")
+    loc = place.get("location", {})
+    maps_uri = place.get("googleMapsUri") or make_deterministic_maps_url(name, address, place_id=place.get("id"))
+
+    price_level = place.get("priceLevel")
+    if price_level in PRICE_LEVEL_ESTIMATE_USD:
+        cost = PRICE_LEVEL_ESTIMATE_USD[price_level]
+        cost_is_estimate = price_level != "PRICE_LEVEL_FREE"
+    else:
+        cost = unknown_cost
+        cost_is_estimate = unknown_cost > 0
+
+    reviews: List[VerifiedReview] = []
+    for r in place.get("reviews", [])[:3]:
+        text = (r.get("originalText") or {}).get("text") or (r.get("text") or {}).get("text") or ""
+        if not text.strip():
+            continue
+        reviews.append(
+            VerifiedReview(
+                author=(r.get("authorAttribution") or {}).get("displayName", "Google reviewer"),
+                rating=float(r.get("rating", 0) or 0),
+                excerpt=text.strip(),
+                source_platform="Google",
+                source_url=maps_uri,
+            )
+        )
+
+    summary = (place.get("editorialSummary") or {}).get("text") or ""
+    if not summary and reviews:
+        first = reviews[0].excerpt
+        summary = first if len(first) <= 200 else first[:197].rstrip() + "..."
+
+    return QuestCandidate(
+        id=str(uuid.uuid4())[:8],
+        name=name,
+        address=address,
+        lat=float(loc.get("latitude", 34.0522)),
+        lng=float(loc.get("longitude", -118.2437)),
+        admission_cost=cost,
+        cost_is_estimate=cost_is_estimate,
+        estimated_dwell_mins=dwell_mins,
+        verified_url=place.get("websiteUri") or maps_uri,
+        reviews=reviews,
+        is_verified=True,
+        description=summary,
+        perk=perk,
+        category=(place.get("primaryTypeDisplayName") or {}).get("text") or category_fallback,
+        rating=float(place.get("rating", 0) or 0),
+        review_count=int(place.get("userRatingCount", 0) or 0),
+        review_summary=summary,
+    )
+
+
+async def google_place_candidates(
+    text_query: str,
+    *,
+    scout_name: str,
+    category_fallback: str,
+    dwell_for,
+    unknown_cost: float,
+    perk: str,
+    max_results: int = 4,
+) -> List[QuestCandidate]:
+    """Live discovery for a scout. Logs which source was used; returns [] so callers fall back to the catalog."""
+    places, status = await asyncio.to_thread(google_places_search, text_query, max_results)
+    source = "using live results" if places else "falling back to catalog"
+    print(f"INFO:     [{scout_name}]: 📍 Google Places '{text_query}' -> {status}; {source}", flush=True)
+    return [
+        place_to_candidate(
+            p,
+            category_fallback=category_fallback,
+            dwell_mins=dwell_for(p.get("primaryType", "")),
+            unknown_cost=unknown_cost,
+            perk=perk,
+        )
+        for p in places
+    ]
+
+
 async def ground_and_validate_candidates(
     candidates: List[QuestCandidate],
     area_hint: str = "Los Angeles",

@@ -56,6 +56,7 @@ class QuestCandidate(Model):
     lat: float
     lng: float
     admission_cost: float = 0.0
+    cost_is_estimate: bool = False  # True when admission_cost is a guess (e.g. from Google's price level)
     estimated_dwell_mins: int = 45
     verified_url: str = ""        # Must be an active, verified URL (tested status < 400)
     reviews: List[VerifiedReview] = []

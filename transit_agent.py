@@ -10,6 +10,7 @@ Subagent in Quest Orchestrator Bureau:
 import os
 import sys
 import math
+import asyncio
 import requests
 from typing import List, Dict, Tuple
 from dotenv import load_dotenv
@@ -69,40 +70,54 @@ def get_origin_coords(origin_text: str) -> Tuple[float, float]:
 
 
 def calculate_routes_api(origin_coords: Tuple[float, float], dest_lat: float, dest_lng: float) -> List[TransitOption]:
-    """Optional Google Maps Routes API call if API key exists."""
+    """Live LA Metro travel time from the Google Routes API, if GOOGLE_MAPS_API_KEY is set.
+    Returns [] (and logs why) on any failure so callers keep their estimates."""
     gmaps_key = os.getenv("GOOGLE_MAPS_API_KEY", "").strip()
     if not gmaps_key:
         return []
 
+    def log(status: str) -> None:
+        print(f"INFO:     [Transit Agent]: 🗺️ Google Routes (transit) -> {status}", flush=True)
+
     try:
-        url = "https://routes.googleapis.com/directions/v2:computeRoutes"
-        headers = {
-            "Content-Type": "application/json",
-            "X-Goog-Api-Key": gmaps_key,
-            "X-Goog-FieldMask": "routes.duration,routes.distanceMeters",
-        }
-        body = {
-            "origin": {"location": {"latLng": {"latitude": origin_coords[0], "longitude": origin_coords[1]}}},
-            "destination": {"location": {"latLng": {"latitude": dest_lat, "longitude": dest_lng}}},
-            "travelMode": "TRANSIT",
-        }
-        res = requests.post(url, headers=headers, json=body, timeout=3.0)
-        if res.status_code == 200:
-            data = res.json()
-            routes = data.get("routes", [])
-            if routes:
-                duration_sec = int(routes[0].get("duration", "900s").replace("s", ""))
-                return [
-                    TransitOption(
-                        mode="transit",
-                        duration_minutes=max(10, duration_sec // 60),
-                        estimated_cost=1.75,
-                        details="Live Google Transit Route (LA Metro)",
-                    )
-                ]
-    except Exception:
-        pass
-    return []
+        res = requests.post(
+            "https://routes.googleapis.com/directions/v2:computeRoutes",
+            headers={
+                "Content-Type": "application/json",
+                "X-Goog-Api-Key": gmaps_key,
+                "X-Goog-FieldMask": "routes.duration,routes.distanceMeters",
+            },
+            json={
+                "origin": {"location": {"latLng": {"latitude": origin_coords[0], "longitude": origin_coords[1]}}},
+                "destination": {"location": {"latLng": {"latitude": dest_lat, "longitude": dest_lng}}},
+                "travelMode": "TRANSIT",
+            },
+            timeout=4.0,
+        )
+    except requests.RequestException as err:
+        log(f"request failed ({type(err).__name__}); using estimates")
+        return []
+    if res.status_code != 200:
+        try:
+            message = res.json().get("error", {}).get("message", "")
+        except ValueError:
+            message = res.text
+        log(f"HTTP {res.status_code}: {message[:160]}; using estimates")
+        return []
+    routes = res.json().get("routes", [])
+    if not routes:
+        log("no transit route found; using estimates")
+        return []
+    duration_min = max(1, int(str(routes[0].get("duration", "0s")).rstrip("s") or 0) // 60)
+    log(f"{duration_min} min")
+    return [
+        TransitOption(
+            mode="transit",
+            duration_minutes=duration_min,
+            estimated_cost=1.75,
+            details="Live Google Transit Route (LA Metro)",
+        )
+    ]
 
 
 def calculate_multi_modal_options(origin_str: str, dest_lat: float, dest_lng: float) -> Tuple[List[TransitOption], str]:
@@ -184,14 +199,15 @@ async def handle_transit_query(ctx: Context, sender: str, msg: TransitQuery):
         f"Origin: '{msg.origin}' -> Dest: ({msg.destination_lat:.4f}, {msg.destination_lng:.4f})"
     )
 
-    # 1. Try Google Maps API if configured
-    options = calculate_routes_api((34.0689, -118.4452), msg.destination_lat, msg.destination_lng)
+    # 1. Estimates for every mode (walking, transit, driving, rideshare)
+    options, recommended = calculate_multi_modal_options(msg.origin, msg.destination_lat, msg.destination_lng)
 
-    # 2. Comprehensive multi-modal mobility calculation
-    if not options or len(options) < 2:
-        options, recommended = calculate_multi_modal_options(msg.origin, msg.destination_lat, msg.destination_lng)
-    else:
-        recommended = options[0].mode
+    # 2. Swap in Google's live transit time when available (it only covers the transit mode)
+    live = await asyncio.to_thread(
+        calculate_routes_api, get_origin_coords(msg.origin), msg.destination_lat, msg.destination_lng
+    )
+    if live:
+        options = [live[0] if o.mode == "transit" else o for o in options]
 
     ctx.logger.info(
         f"🛣️ Calculated {len(options)} transit options. Recommended mode: '{recommended}'. Replying to Orchestrator..."

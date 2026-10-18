@@ -28,6 +28,8 @@ from schemas import TrailsQuery, ScoutSubResult, QuestCandidate, VerifiedReview
 from tools.browser_tools import (
     REAL_SOURCE_CATALOG,
     ground_and_validate_candidates,
+    google_place_candidates,
+    in_los_angeles,
     make_deterministic_maps_url,
 )
 
@@ -57,6 +59,20 @@ async def query_trails_scout(
     computes distance-based dwell time, and checks live URL health.
     """
     area_clean = (area or "santa monica").lower()
+
+    # 1. Live Google Places (when GOOGLE_MAPS_API_KEY is set); the curated catalog below is the fallback.
+    live = await google_place_candidates(
+        f"hiking trails and parks near {in_los_angeles(area)}",
+        scout_name="Trails Scout",
+        category_fallback="Park",
+        dwell_for=lambda _type: 60,
+        unknown_cost=0.0,  # parks and trailheads are free to enter
+        perk="+20 Live Discovery Bonus",
+    )
+    if live:
+        return await ground_and_validate_candidates(live, area_hint=area)
+
+    # 2. Curated catalog fallback
 
     catalog = REAL_SOURCE_CATALOG["trails"]
     if "santa monica" in area_clean or "palisades" in area_clean or "venice" in area_clean:

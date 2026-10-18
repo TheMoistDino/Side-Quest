@@ -29,6 +29,8 @@ from schemas import CultureQuery, ScoutSubResult, QuestCandidate, VerifiedReview
 from tools.browser_tools import (
     REAL_SOURCE_CATALOG,
     ground_and_validate_candidates,
+    google_place_candidates,
+    in_los_angeles,
     make_deterministic_maps_url,
 )
 
@@ -61,6 +63,21 @@ async def query_culture_scout(
     estimates category-specific dwell times, and verifies live links.
     """
     area_clean = (area or "westwood").lower()
+
+    # 1. Live Google Places (when GOOGLE_MAPS_API_KEY is set); the curated catalog below is the fallback.
+    live = await google_place_candidates(
+        f"{exhibition_type or 'museums and art galleries'} in {in_los_angeles(area)}",
+        scout_name="Culture Scout",
+        category_fallback="Museum",
+        dwell_for=bound_culture_dwell,
+        unknown_cost=10.0,  # admission unknown: show "~$10 estimate" rather than claiming it's free
+        perk="+20 Live Discovery Bonus",
+    )
+    live = [c for c in live if admission_max <= 0 or c.admission_cost <= admission_max]
+    if live:
+        return await ground_and_validate_candidates(live, area_hint=area)
+
+    # 2. Curated catalog fallback
 
     catalog = REAL_SOURCE_CATALOG["culture"]
     if "westwood" in area_clean or "ucla" in area_clean:
