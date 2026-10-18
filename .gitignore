@@ -1,0 +1,22 @@
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment and secrets
+.env
+private_keys.json
+*.pem
+
+# Logs
+*.log
+uagents_core.log
+
+# IDE files
+.vscode/
+.idea/
