@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+/* Design tokens mirror the "Side Quest Board" Paper file (mood: signage). */
+@theme {
+  --color-bg: #ffffff;
+  --color-ink: #14161a;
+  --color-muted: #5b5f66;
+  --color-fog: #eeeeee;
+  --color-line: #d9dadc;
+  --color-sign: #ffc72c;
+  --color-trail: #1f7a4d;
+  --color-danger: #d93a2b;
+
+  --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --tracking-tight: -0.03em;
+  --tracking-caps: 0.08em;
+
+  --shadow-hard-sm: 2px 2px 0 var(--color-ink);
+  --shadow-hard: 4px 4px 0 var(--color-ink);
+
+  --animate-hop: hop 0.9s ease-in-out infinite;
+  --animate-slide: slide 1.4s ease-in-out infinite;
+  --animate-rise: rise 0.35s ease-out both;
+
+  @keyframes hop {
+    0%, 100% { transform: translateY(0); }
+    40% { transform: translateY(-12px); }
+  }
+  @keyframes slide {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(250%); }
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+}
+
+/* Range slider: ink fill up to --fill, yellow sign-post thumb. */
+.quest-range {
+  appearance: none;
+  width: 100%;
+  height: 20px;
+  background: transparent;
+  cursor: pointer;
+}
+.quest-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--color-ink) var(--fill), var(--color-fog) var(--fill));
+}
+.quest-range::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--color-ink) var(--fill), var(--color-fog) var(--fill));
+}
+.quest-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: -8px;
+  border-radius: 999px;
+  background: var(--color-sign);
+  border: 2px solid var(--color-ink);
+}
+.quest-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--color-sign);
+  border: 2px solid var(--color-ink);
+}
+.quest-range:focus-visible {
+  outline: none;
+}
+.quest-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-sign) 50%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
